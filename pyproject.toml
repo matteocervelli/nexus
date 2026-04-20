@@ -1,0 +1,51 @@
+[project]
+name = "nexus"
+version = "0.1.0"
+description = "AI company orchestration daemon"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "click>=8.1",
+    "structlog>=24.0",
+    "pydantic>=2.7",
+]
+
+[project.scripts]
+nexus = "nexus.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nexus"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: requires live external services (deselect with -m 'not integration')",
+    "e2e: full end-to-end tests (deselect with -m 'not e2e')",
+]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
