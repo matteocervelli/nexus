@@ -21,6 +21,9 @@ from typing import Any
 import httpx
 import structlog
 
+from nexus.budget import BudgetChecker
+from nexus.scheduler import Scheduler
+
 logger = structlog.get_logger(__name__)
 
 _SIGKILL_WAIT = 5
@@ -156,6 +159,7 @@ class NexusDaemon:
         )
         self._stop_event = asyncio.Event()
         self._client: httpx.AsyncClient | None = None
+        self._scheduler: Scheduler | None = None
 
     async def start(self) -> None:
         """Start the daemon. Blocks until stop() is called or SIGTERM received."""
@@ -171,6 +175,7 @@ class NexusDaemon:
             timeout=httpx.Timeout(connect=5, read=30, write=10, pool=None),
         ) as client:
             self._client = client
+            self._scheduler = Scheduler(client, BudgetChecker(client))
             await reconcile_orphans(client)
             log.info("daemon.startup_complete")
             await self._heartbeat_loop(client)
@@ -204,5 +209,6 @@ class NexusDaemon:
                 pass  # normal — just means it's time for next tick
 
     async def _tick(self, client: httpx.AsyncClient) -> None:
-        """Single heartbeat tick. Scheduler integration added in Phase C #9/#15."""
-        pass
+        if self._scheduler is None:
+            return
+        await self._scheduler.tick()
