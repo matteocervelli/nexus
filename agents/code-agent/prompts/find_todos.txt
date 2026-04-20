@@ -1,0 +1,24 @@
+Find all TODO and FIXME comments in the repository at the path specified in work_item context["repo_path"].
+
+For each finding, record:
+- file path (relative to repo root)
+- line number
+- the full comment text
+- a suggested GitHub issue title (imperative, ≤72 chars)
+
+Return JSON:
+{
+  "status": "done",
+  "files_modified": [],
+  "summary": "Found N TODOs/FIXMEs across M files.",
+  "confidence": 0.95,
+  "issues_found": N,
+  "findings": [
+    {
+      "file": "path/to/file.py",
+      "line": 42,
+      "comment": "TODO: refactor this",
+      "issue_title": "Refactor authentication module"
+    }
+  ]
+}
