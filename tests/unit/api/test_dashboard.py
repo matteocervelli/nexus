@@ -228,3 +228,231 @@ async def test_get_status_budget_alerts_only_above_80(nexus_api_client):
         resp = await nexus_api_client.get("/nexus/api/status")
     assert resp.status_code == 200
     assert resp.json()["budget_alerts"] == []
+
+
+# ---------------------------------------------------------------------------
+# GET /nexus/api/work_items
+# ---------------------------------------------------------------------------
+
+WORK_ITEM_1 = {
+    "id": "wi-001",
+    "type": "scan",
+    "agent_role": "code-agent",
+    "priority": "P2",
+    "status": "running",
+    "context": {"repo": "nexus"},
+    "result": None,
+    "token_cost": 0,
+    "created_at": "2026-04-21T10:00:00Z",
+    "updated_at": None,
+    "started_at": "2026-04-21T10:01:00Z",
+    "completed_at": None,
+}
+
+
+@pytest.mark.asyncio
+async def test_list_work_items_happy_path(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/work_items").respond(200, json=[WORK_ITEM_1])
+        resp = await nexus_api_client.get("/nexus/api/work_items")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "wi-001"
+    assert data[0]["agent_role"] == "code-agent"
+
+
+@pytest.mark.asyncio
+async def test_list_work_items_empty(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/work_items").respond(200, json=[])
+        resp = await nexus_api_client.get("/nexus/api/work_items")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_work_items_forwards_filters(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        route = mock.get("/api/work_items").respond(200, json=[WORK_ITEM_1])
+        resp = await nexus_api_client.get(
+            "/nexus/api/work_items",
+            params={"status": "running", "agent_role": "code-agent", "limit": 20},
+        )
+    assert resp.status_code == 200
+    called_url = str(route.calls[0].request.url)
+    assert "status=running" in called_url
+    assert "agent_role=code-agent" in called_url
+    assert "limit=20" in called_url
+
+
+@pytest.mark.asyncio
+async def test_list_work_items_upstream_5xx(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/work_items").respond(500)
+        resp = await nexus_api_client.get("/nexus/api/work_items")
+    assert resp.status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# GET /nexus/api/runs  +  GET /nexus/api/runs/{id}  +  GET /nexus/api/runs/{id}/events
+# ---------------------------------------------------------------------------
+
+RUN_1 = {
+    "id": "run-001",
+    "work_item_id": "wi-001",
+    "workflow_step_id": None,
+    "agent_role": "code-agent",
+    "execution_backend": "anthropic-sdk",
+    "model": "claude-sonnet-4-6",
+    "status": "succeeded",
+    "started_at": "2026-04-21T10:01:00Z",
+    "finished_at": "2026-04-21T10:05:00Z",
+    "tokens_total": 1500,
+    "cost_usd": 0.003,
+    "created_at": "2026-04-21T10:01:00Z",
+    "updated_at": "2026-04-21T10:05:00Z",
+}
+
+RUN_DETAIL_1 = {
+    **RUN_1,
+    "external_run_id": None,
+    "session_kind": None,
+    "session_id_before": None,
+    "session_id_after": None,
+    "session_metadata": None,
+    "tokens_input": 1000,
+    "tokens_output": 500,
+    "cost_source": "sdk",
+    "stdout_excerpt": "Task done.",
+    "stderr_excerpt": None,
+    "result_payload": {"status": "ok"},
+    "error_code": None,
+    "error_message": None,
+}
+
+RUN_EVENT_1 = {
+    "id": "ev-001",
+    "run_id": "run-001",
+    "event_index": 0,
+    "event_type": "tool_call",
+    "tool_name": "Bash",
+    "payload": {"command": "ls /"},
+    "occurred_at": "2026-04-21T10:01:01Z",
+    "created_at": "2026-04-21T10:01:01Z",
+}
+
+
+@pytest.mark.asyncio
+async def test_list_runs_happy_path(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log").respond(200, json=[RUN_1])
+        resp = await nexus_api_client.get("/nexus/api/runs")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "run-001"
+    assert data[0]["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_list_runs_forwards_filters(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        route = mock.get("/api/run_log").respond(200, json=[RUN_1])
+        resp = await nexus_api_client.get(
+            "/nexus/api/runs",
+            params={"agent_role": "code-agent", "status": "succeeded", "limit": 10},
+        )
+    assert resp.status_code == 200
+    called_url = str(route.calls[0].request.url)
+    assert "agent_role=code-agent" in called_url
+    assert "status=succeeded" in called_url
+    assert "limit=10" in called_url
+
+
+@pytest.mark.asyncio
+async def test_list_runs_upstream_5xx(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log").respond(500)
+        resp = await nexus_api_client.get("/nexus/api/runs")
+    assert resp.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_get_run_happy_path(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log/run-001").respond(200, json=RUN_DETAIL_1)
+        resp = await nexus_api_client.get("/nexus/api/runs/run-001")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["id"] == "run-001"
+    assert data["stdout_excerpt"] == "Task done."
+    assert data["tokens_input"] == 1000
+
+
+@pytest.mark.asyncio
+async def test_get_run_not_found(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log/missing").respond(404)
+        resp = await nexus_api_client.get("/nexus/api/runs/missing")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_run_upstream_5xx(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log/run-001").respond(500)
+        resp = await nexus_api_client.get("/nexus/api/runs/run-001")
+    assert resp.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_list_run_events_happy_path(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log/run-001/events").respond(200, json=[RUN_EVENT_1])
+        resp = await nexus_api_client.get("/nexus/api/runs/run-001/events")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["event_type"] == "tool_call"
+    assert data[0]["event_index"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_run_events_run_not_found(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log/missing/events").respond(404)
+        resp = await nexus_api_client.get("/nexus/api/runs/missing/events")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_run_events_upstream_5xx(nexus_api_client):
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/run_log/run-001/events").respond(500)
+        resp = await nexus_api_client.get("/nexus/api/runs/run-001/events")
+    assert resp.status_code == 502
+
+
+@pytest.mark.asyncio
+async def test_list_work_items_multi_status_filter(nexus_api_client):
+    """Multi-status filter sends repeated query params, not a single scalar."""
+    with respx.mock(base_url="http://atrium-test") as mock:
+        route = mock.get("/api/work_items").respond(200, json=[WORK_ITEM_1])
+        resp = await nexus_api_client.get(
+            "/nexus/api/work_items",
+            params=[("status", "running"), ("status", "done"), ("status", "failed")],
+        )
+    assert resp.status_code == 200
+    called_url = str(route.calls[0].request.url)
+    assert called_url.count("status=") == 3
+
+
+@pytest.mark.asyncio
+async def test_list_work_items_transport_error(nexus_api_client):
+    import httpx as _httpx
+
+    with respx.mock(base_url="http://atrium-test") as mock:
+        mock.get("/api/work_items").mock(side_effect=_httpx.ConnectError("refused"))
+        resp = await nexus_api_client.get("/nexus/api/work_items")
+    assert resp.status_code == 502

@@ -13,9 +13,13 @@ from nexus.api.schemas import (
     AgentStatus,
     BudgetAlert,
     CancelAction,
+    RunDetail,
+    RunEvent,
+    RunSummary,
     StatusSummary,
     WorkflowDetail,
     WorkflowSummary,
+    WorkItemSummary,
 )
 
 router = APIRouter(prefix="/nexus/api", tags=["dashboard"])
@@ -25,6 +29,10 @@ def _raise_for_atrium(exc: httpx.HTTPStatusError) -> None:
     if exc.response.status_code == 404:
         raise HTTPException(status_code=404, detail="Not found")
     raise HTTPException(status_code=502, detail="Upstream error")
+
+
+def _raise_for_transport(exc: httpx.RequestError) -> None:
+    raise HTTPException(status_code=502, detail=f"Upstream unreachable: {exc}")
 
 
 @router.get("/workflows", response_model=list[WorkflowSummary])
@@ -189,3 +197,104 @@ async def get_status(
         queue_depth=len(pending_items),
         budget_alerts=budget_alerts,
     )
+
+
+@router.get("/work_items", response_model=list[WorkItemSummary])
+async def list_work_items(
+    status: list[str] = Query(default=[]),
+    agent_role: str | None = Query(None),
+    workflow_id: str | None = Query(None),
+    limit: int | None = Query(None),
+    offset: int | None = Query(None),
+    client: httpx.AsyncClient = Depends(get_atrium_client),
+) -> Any:
+    # httpx passes list params as repeated keys: ?status=running&status=done
+    params: list[tuple[str, Any]] = []
+    for s in status:
+        params.append(("status", s))
+    if agent_role is not None:
+        params.append(("agent_role", agent_role))
+    if workflow_id is not None:
+        params.append(("workflow_id", workflow_id))
+    if limit is not None:
+        params.append(("limit", limit))
+    if offset is not None:
+        params.append(("offset", offset))
+    try:
+        resp = await client.get("/api/work_items", params=params)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_for_atrium(exc)
+    except httpx.RequestError as exc:
+        _raise_for_transport(exc)
+    return resp.json()
+
+
+@router.get("/runs", response_model=list[RunSummary])
+async def list_runs(
+    agent_role: str | None = Query(None),
+    status: str | None = Query(None),
+    work_item_id: str | None = Query(None),
+    workflow_step_id: str | None = Query(None),
+    limit: int | None = Query(None),
+    offset: int | None = Query(None),
+    client: httpx.AsyncClient = Depends(get_atrium_client),
+) -> Any:
+    params: dict[str, Any] = {}
+    if agent_role is not None:
+        params["agent_role"] = agent_role
+    if status is not None:
+        params["status"] = status
+    if work_item_id is not None:
+        params["work_item_id"] = work_item_id
+    if workflow_step_id is not None:
+        params["workflow_step_id"] = workflow_step_id
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
+    try:
+        resp = await client.get("/api/run_log", params=params)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_for_atrium(exc)
+    except httpx.RequestError as exc:
+        _raise_for_transport(exc)
+    return resp.json()
+
+
+@router.get("/runs/{run_id}", response_model=RunDetail)
+async def get_run(
+    run_id: str,
+    client: httpx.AsyncClient = Depends(get_atrium_client),
+) -> Any:
+    try:
+        resp = await client.get(f"/api/run_log/{run_id}")
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_for_atrium(exc)
+    except httpx.RequestError as exc:
+        _raise_for_transport(exc)
+    return resp.json()
+
+
+@router.get("/runs/{run_id}/events", response_model=list[RunEvent])
+async def list_run_events(
+    run_id: str,
+    limit: int | None = Query(None),
+    offset: int | None = Query(None),
+    client: httpx.AsyncClient = Depends(get_atrium_client),
+) -> Any:
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
+    try:
+        resp = await client.get(f"/api/run_log/{run_id}/events", params=params)
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        _raise_for_atrium(exc)
+    except httpx.RequestError as exc:
+        _raise_for_transport(exc)
+    return resp.json()

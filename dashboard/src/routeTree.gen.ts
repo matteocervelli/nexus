@@ -13,6 +13,7 @@ import { Route as WorkflowsRouteImport } from './routes/workflows'
 import { Route as AuditRouteImport } from './routes/audit'
 import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuditRunIdRouteImport } from './routes/audit.$runId'
 
 const WorkflowsRoute = WorkflowsRouteImport.update({
   id: '/workflows',
@@ -34,38 +35,46 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuditRunIdRoute = AuditRunIdRouteImport.update({
+  id: '/$runId',
+  path: '/$runId',
+  getParentRoute: () => AuditRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/audit': typeof AuditRoute
+  '/audit': typeof AuditRouteWithChildren
   '/workflows': typeof WorkflowsRoute
+  '/audit/$runId': typeof AuditRunIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/audit': typeof AuditRoute
+  '/audit': typeof AuditRouteWithChildren
   '/workflows': typeof WorkflowsRoute
+  '/audit/$runId': typeof AuditRunIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/audit': typeof AuditRoute
+  '/audit': typeof AuditRouteWithChildren
   '/workflows': typeof WorkflowsRoute
+  '/audit/$runId': typeof AuditRunIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/agents' | '/audit' | '/workflows'
+  fullPaths: '/' | '/agents' | '/audit' | '/workflows' | '/audit/$runId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/agents' | '/audit' | '/workflows'
-  id: '__root__' | '/' | '/agents' | '/audit' | '/workflows'
+  to: '/' | '/agents' | '/audit' | '/workflows' | '/audit/$runId'
+  id: '__root__' | '/' | '/agents' | '/audit' | '/workflows' | '/audit/$runId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentsRoute: typeof AgentsRoute
-  AuditRoute: typeof AuditRoute
+  AuditRoute: typeof AuditRouteWithChildren
   WorkflowsRoute: typeof WorkflowsRoute
 }
 
@@ -99,13 +108,30 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/audit/$runId': {
+      id: '/audit/$runId'
+      path: '/$runId'
+      fullPath: '/audit/$runId'
+      preLoaderRoute: typeof AuditRunIdRouteImport
+      parentRoute: typeof AuditRoute
+    }
   }
 }
+
+interface AuditRouteChildren {
+  AuditRunIdRoute: typeof AuditRunIdRoute
+}
+
+const AuditRouteChildren: AuditRouteChildren = {
+  AuditRunIdRoute: AuditRunIdRoute,
+}
+
+const AuditRouteWithChildren = AuditRoute._addFileChildren(AuditRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
-  AuditRoute: AuditRoute,
+  AuditRoute: AuditRouteWithChildren,
   WorkflowsRoute: WorkflowsRoute,
 }
 export const routeTree = rootRouteImport

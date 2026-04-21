@@ -4,3 +4,9 @@
 :root {
   // --al-color-primary: #your-primary;
 }
+
+// Warning row — used when agent token usage >= 80%
+.al-table-row--warning {
+  --al-progress-fill: var(--al-warning-color, #f59e0b);
+  background-color: var(--al-warning-bg, rgba(245, 158, 11, 0.08));
+}
