@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SSE endpoint `GET /nexus/api/events` — streams `work_item_status_changed`, `agent_spawned`, `agent_completed`, `workflow_step_updated`, `budget_alert` events as newline-delimited JSON to all connected dashboard clients; keepalive comment every 30 s (#23)
+- `EventBus` (`src/nexus/events.py`) — bounded per-connection asyncio queue fan-out; drop-on-full with warning; publish errors isolated from control path (#23)
 - FastAPI dashboard API layer (`/nexus/api/*`) — five proxy endpoints (list workflows, get workflow detail, cancel workflow, list agents, get status/budget alerts) with respx-mocked unit tests (#22)
 - `nexus api` CLI subcommand: standalone API server without daemon heartbeat (#22)
 - `--serve-api/--no-serve-api` and `--api-port` options on `nexus start`; daemon starts embedded uvicorn server sharing the Atrium AsyncClient with startup-bind verification (#22)

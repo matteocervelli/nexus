@@ -18,6 +18,7 @@ import structlog
 from nexus.adapter_base import AdapterRequest, AdapterResult
 from nexus.adapters import ADAPTER_REGISTRY
 from nexus.budget import BudgetChecker
+from nexus.events import EventBus, EventType
 from nexus.models import AgentRegistryEntry, WorkflowStep, WorkItem
 
 logger = structlog.get_logger(__name__)
@@ -33,9 +34,11 @@ class Scheduler:
         self,
         atrium_client: httpx.AsyncClient,
         budget_checker: BudgetChecker,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._client = atrium_client
         self._budget = budget_checker
+        self._events = event_bus
 
     async def tick(self) -> None:
         """Single heartbeat tick: poll pending work_items, dispatch ready ones."""
@@ -142,6 +145,14 @@ class Scheduler:
                 return
 
             await self._patch_item(item.id, {"status": "running", "started_at": _now_iso()})
+            await self._publish(
+                EventType.WORK_ITEM_STATUS_CHANGED,
+                {"work_item_id": str(item.id), "agent_role": item.agent_role, "status": "running"},
+            )
+            await self._publish(
+                EventType.AGENT_SPAWNED,
+                {"work_item_id": str(item.id), "agent_role": item.agent_role},
+            )
 
             adapter_cls = ADAPTER_REGISTRY[entry.execution_backend]
             adapter = adapter_cls()
@@ -167,11 +178,36 @@ class Scheduler:
                 patch_body["token_cost"] = result.usage.tokens_used
 
             await self._patch_item(item.id, patch_body)
+            event_data: dict[str, Any] = {
+                "work_item_id": str(item.id),
+                "agent_role": item.agent_role,
+                "status": work_item_status,
+            }
+            if result.usage:
+                event_data["token_cost"] = result.usage.tokens_used
+            if item.context.get("workflow_step_id"):
+                await self._publish(
+                    EventType.WORKFLOW_STEP_UPDATED,
+                    {
+                        "workflow_step_id": item.context["workflow_step_id"],
+                        "status": work_item_status,
+                    },
+                )
+            await self._publish(EventType.WORK_ITEM_STATUS_CHANGED, event_data)
+            await self._publish(EventType.AGENT_COMPLETED, event_data)
             log.info("scheduler.dispatch_complete", adapter_status=result.status)
 
         except Exception as exc:
             log.error("scheduler.dispatch_error", error=str(exc))
             await self._patch_failed(item.id, str(exc))
+            failed_data = {
+                "work_item_id": str(item.id),
+                "agent_role": item.agent_role,
+                "status": "failed",
+                "error": str(exc),
+            }
+            await self._publish(EventType.WORK_ITEM_STATUS_CHANGED, failed_data)
+            await self._publish(EventType.AGENT_COMPLETED, failed_data)
 
     async def _fetch_registry_entry(self, agent_role: str) -> AgentRegistryEntry | None:
         try:
@@ -184,6 +220,15 @@ class Scheduler:
         except Exception as exc:
             logger.error("scheduler.registry_fetch_error", error=str(exc))
         return None
+
+    async def _publish(self, event_type: EventType, data: dict[str, Any]) -> None:
+        if self._events is not None:
+            try:
+                await self._events.publish(event_type, data)
+            except Exception as exc:
+                logger.warning(
+                    "scheduler.publish_error", event_type=event_type.value, error=str(exc)
+                )
 
     async def _patch_item(self, item_id: uuid.UUID, body: dict[str, Any]) -> None:
         try:

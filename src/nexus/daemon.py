@@ -23,6 +23,7 @@ import structlog
 import uvicorn
 
 from nexus.budget import BudgetChecker
+from nexus.events import EventBus
 from nexus.scheduler import Scheduler
 
 logger = structlog.get_logger(__name__)
@@ -181,13 +182,14 @@ class NexusDaemon:
             timeout=httpx.Timeout(connect=5, read=30, write=10, pool=None),
         ) as client:
             self._client = client
-            self._scheduler = Scheduler(client, BudgetChecker(client))
+            event_bus = EventBus()
+            self._scheduler = Scheduler(client, BudgetChecker(client, event_bus), event_bus)
             await reconcile_orphans(client)
 
             if self._serve_api:
                 from nexus.api import create_app
 
-                app = create_app(atrium_client=client)
+                app = create_app(atrium_client=client, event_bus=event_bus)
                 config = uvicorn.Config(app, host="127.0.0.1", port=self._api_port, log_config=None)
                 api_server = uvicorn.Server(config)
                 api_server.install_signal_handlers = lambda: None  # type: ignore[attr-defined]

@@ -135,3 +135,38 @@ async def test_registry_404_returns_false():
     )
     async with httpx.AsyncClient(base_url=_BASE) as client:
         assert await BudgetChecker(client).check(_AGENT_ROLE) is False
+
+
+# ---------------------------------------------------------------------------
+# Event bus integration
+# ---------------------------------------------------------------------------
+
+
+@respx.mock
+async def test_over_budget_publishes_budget_alert():
+    """BudgetChecker publishes BUDGET_ALERT when budget is exceeded."""
+    from nexus.events import EventBus, EventType
+
+    respx.get(f"{_BASE}/api/budget_ledger").mock(
+        return_value=httpx.Response(200, json=_ledger(15000))
+    )
+    respx.get(f"{_BASE}/api/agent_registry/{_AGENT_ROLE}").mock(
+        return_value=httpx.Response(200, json=_agent(10000))
+    )
+    respx.patch(f"{_BASE}/api/work_items/{_WORK_ITEM_ID}").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    respx.post(f"{_BASE}/api/work_items").mock(return_value=httpx.Response(201, json={}))
+
+    bus = EventBus()
+    q = bus.subscribe()
+
+    async with httpx.AsyncClient(base_url=_BASE) as client:
+        checker = BudgetChecker(client, event_bus=bus)
+        result = await checker.check(_AGENT_ROLE, _WORK_ITEM_ID)
+
+    assert result is False
+    assert not q.empty()
+    evt = q.get_nowait()
+    assert evt["type"] == EventType.BUDGET_ALERT.value
+    assert evt["data"]["agent_role"] == _AGENT_ROLE

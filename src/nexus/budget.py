@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 import structlog
 
+from nexus.events import EventBus, EventType
 from nexus.models import AgentRegistryEntry, BudgetLedger
 
 logger = structlog.get_logger(__name__)
@@ -25,8 +26,9 @@ logger = structlog.get_logger(__name__)
 class BudgetChecker:
     """Check monthly token budget before spawning an agent."""
 
-    def __init__(self, atrium_client: httpx.AsyncClient) -> None:
+    def __init__(self, atrium_client: httpx.AsyncClient, event_bus: EventBus | None = None) -> None:
         self._client = atrium_client
+        self._events = event_bus
 
     async def check(self, agent_role: str, work_item_id: uuid.UUID | None = None) -> bool:
         """Return True if the agent may spawn; False if budget is exhausted or paused.
@@ -136,3 +138,16 @@ class BudgetChecker:
             )
         except Exception as exc:
             log.error("budget.notify_error", error=str(exc))
+
+        if self._events is not None:
+            try:
+                await self._events.publish(
+                    EventType.BUDGET_ALERT,
+                    {
+                        "agent_role": agent_role,
+                        "work_item_id": str(work_item_id) if work_item_id else None,
+                        "reason": error_message,
+                    },
+                )
+            except Exception as exc:
+                log.warning("budget.publish_error", error=str(exc))

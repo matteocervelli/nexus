@@ -11,12 +11,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from nexus.api.dashboard import router as dashboard_router
+from nexus.api.events import router as events_router
+from nexus.events import EventBus
 
 
 def create_app(
     atrium_url: str | None = None,
     cors_origins: list[str] | None = None,
     atrium_client: httpx.AsyncClient | None = None,
+    event_bus: EventBus | None = None,
 ) -> FastAPI:
     resolved_url = atrium_url or os.environ.get("ATRIUM_URL", "http://localhost:8100")
 
@@ -44,6 +47,8 @@ def create_app(
     else:
         app.state.owns_client = True
 
+    app.state.event_bus = event_bus if event_bus is not None else EventBus()
+
     env_origins = os.environ.get("NEXUS_CORS_ORIGINS", "")
     raw_origins_str: str = env_origins if cors_origins is None else ",".join(cors_origins)
     if raw_origins_str:
@@ -59,4 +64,5 @@ def create_app(
     )
 
     app.include_router(dashboard_router)
+    app.include_router(events_router)
     return app
