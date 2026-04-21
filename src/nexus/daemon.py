@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 import structlog
+import uvicorn
 
 from nexus.budget import BudgetChecker
 from nexus.scheduler import Scheduler
@@ -150,6 +151,8 @@ class NexusDaemon:
         self,
         atrium_url: str | None = None,
         heartbeat_interval: int | None = None,
+        serve_api: bool = True,
+        api_port: int = 8200,
     ) -> None:
         self._atrium_url = atrium_url or os.environ.get("ATRIUM_URL", _DEFAULT_ATRIUM_URL)
         self._heartbeat_interval = heartbeat_interval or int(
@@ -158,6 +161,8 @@ class NexusDaemon:
         self._stop_event = asyncio.Event()
         self._client: httpx.AsyncClient | None = None
         self._scheduler: Scheduler | None = None
+        self._serve_api = serve_api
+        self._api_port = api_port
 
     async def start(self) -> None:
         """Start the daemon. Blocks until stop() is called or SIGTERM received."""
@@ -168,6 +173,9 @@ class NexusDaemon:
         loop.add_signal_handler(signal.SIGTERM, self._on_sigterm)
         loop.add_signal_handler(signal.SIGINT, self._on_sigterm)
 
+        api_task: asyncio.Task[None] | None = None
+        api_server: uvicorn.Server | None = None
+
         async with httpx.AsyncClient(
             base_url=self._atrium_url,
             timeout=httpx.Timeout(connect=5, read=30, write=10, pool=None),
@@ -175,8 +183,37 @@ class NexusDaemon:
             self._client = client
             self._scheduler = Scheduler(client, BudgetChecker(client))
             await reconcile_orphans(client)
+
+            if self._serve_api:
+                from nexus.api import create_app
+
+                app = create_app(atrium_client=client)
+                config = uvicorn.Config(app, host="127.0.0.1", port=self._api_port, log_config=None)
+                api_server = uvicorn.Server(config)
+                api_server.install_signal_handlers = lambda: None  # type: ignore[attr-defined]
+                api_task = asyncio.create_task(api_server.serve(), name="nexus-api")
+                # Wait until uvicorn binds the socket before logging startup_complete.
+                # started is set by uvicorn after successful socket bind.
+                for _ in range(50):
+                    if api_server.started:
+                        break
+                    if api_task.done():
+                        raise RuntimeError(f"API server failed to start on port {self._api_port}")
+                    await asyncio.sleep(0.1)
+                else:
+                    api_server.should_exit = True
+                    raise RuntimeError(
+                        f"API server did not start within 5 s on port {self._api_port}"
+                    )
+
             log.info("daemon.startup_complete")
-            await self._heartbeat_loop(client)
+            try:
+                await self._heartbeat_loop(client)
+            finally:
+                if api_server is not None and api_task is not None:
+                    api_server.should_exit = True
+                    with contextlib.suppress(asyncio.TimeoutError):
+                        await asyncio.wait_for(api_task, timeout=5)
 
         log.info("daemon.stopped")
 

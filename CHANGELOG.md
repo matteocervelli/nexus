@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- FastAPI dashboard API layer (`/nexus/api/*`) — five proxy endpoints (list workflows, get workflow detail, cancel workflow, list agents, get status/budget alerts) with respx-mocked unit tests (#22)
+- `nexus api` CLI subcommand: standalone API server without daemon heartbeat (#22)
+- `--serve-api/--no-serve-api` and `--api-port` options on `nexus start`; daemon starts embedded uvicorn server sharing the Atrium AsyncClient with startup-bind verification (#22)
+- `WorkflowSummary`, `WorkflowDetail`, `WorkflowStep`, `AgentStatus`, `BudgetAlert`, `StatusSummary`, `CancelAction` Pydantic schemas in `src/nexus/api/schemas.py` (#22)
+- `Workflow`, `WorkflowDetail`, `WorkflowUpdate` models added to `src/nexus/models.py` (#22)
+- Dashboard TypeScript: `StatusSummary`, `BudgetAlert` types; `getAgents()` function; `WorkflowStatus` extended with `"cancelled"` (#22)
+
 ### Changed
 
 - `CodexAdapter` rewritten using `openai-codex-sdk` (PyPI) — JSON-RPC subprocess over local `codex` binary; `SessionMode.RESUMABLE`, supports tool use and file system access (#57)

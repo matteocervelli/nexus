@@ -7,7 +7,9 @@ from collections.abc import AsyncGenerator
 
 import httpx
 import pytest
+import pytest_asyncio
 import respx
+from httpx import ASGITransport
 
 
 @pytest.fixture
@@ -31,3 +33,21 @@ def tmp_profile_path(tmp_path: pathlib.Path) -> pathlib.Path:
     profile.mkdir()
     (profile / "CLAUDE.md").write_text("# Test Agent\nYou are a test agent. Reply concisely.\n")
     return profile
+
+
+@pytest_asyncio.fixture
+async def nexus_api_app():
+    from nexus.api import create_app
+
+    atrium = httpx.AsyncClient(base_url="http://atrium-test")
+    app = create_app(atrium_url="http://atrium-test", atrium_client=atrium)
+    yield app
+    await atrium.aclose()
+
+
+@pytest_asyncio.fixture
+async def nexus_api_client(nexus_api_app):
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=nexus_api_app), base_url="http://test"
+    ) as client:
+        yield client
