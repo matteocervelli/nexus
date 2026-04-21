@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 import click
 
@@ -15,9 +16,25 @@ def cli() -> None:
 
 
 @cli.command()
-def start() -> None:
+@click.option("--serve-api/--no-serve-api", default=True, show_default=True)
+@click.option("--api-port", default=8200, show_default=True, type=int)
+def start(serve_api: bool, api_port: int) -> None:
     """Start the Nexus daemon."""
-    asyncio.run(NexusDaemon().start())
+    asyncio.run(NexusDaemon(serve_api=serve_api, api_port=api_port).start())
+
+
+@cli.command("api")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8200, show_default=True, type=int)
+@click.option("--atrium-url", default=None)
+def api_server(host: str, port: int, atrium_url: str | None) -> None:
+    """Run only the API server (without the daemon heartbeat)."""
+    import uvicorn
+
+    from nexus.api import create_app
+
+    url = atrium_url or os.environ.get("ATRIUM_URL", "http://localhost:8100")
+    uvicorn.run(create_app(atrium_url=url), host=host, port=port, log_config=None)
 
 
 @cli.command()

@@ -1,6 +1,11 @@
 // Local type stubs — will be replaced by @atrium/types when dashboard moves to atrium/apps/.
 
-export type WorkflowStatus = "pending" | "running" | "done" | "failed";
+export type WorkflowStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled";
 export type AgentExecutionBackend =
   | "codex-cli"
   | "claude-code-cli"
@@ -31,4 +36,17 @@ export interface AuditEvent {
   agent_role: string;
   event: string;
   created_at: string;
+}
+
+export interface BudgetAlert {
+  agent_role: string;
+  tokens_used: number;
+  monthly_budget: number;
+  percent: number;
+}
+
+export interface StatusSummary {
+  running_count: number;
+  queue_depth: number;
+  budget_alerts: BudgetAlert[];
 }

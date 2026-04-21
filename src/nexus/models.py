@@ -100,6 +100,25 @@ class WorkflowStep(BaseModel):
     updated_at: datetime | None = None
 
 
+class Workflow(BaseModel):
+    id: uuid.UUID
+    name: str
+    status: Literal["pending", "running", "done", "failed", "cancelled"]
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class WorkflowDetail(Workflow):
+    steps: list[WorkflowStep] = Field(default_factory=list)
+    dag: dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime | None = None
+
+
+class WorkflowUpdate(BaseModel):
+    status: Literal["pending", "running", "done", "failed", "cancelled"] | None = None
+
+
 class CostEventCreate(BaseModel):
     agent_role: str
     work_item_id: uuid.UUID | None = None
