@@ -28,6 +28,7 @@ dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
+    "pip-audit>=2.10.0",
 ]
 
 [tool.pytest.ini_options]

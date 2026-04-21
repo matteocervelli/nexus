@@ -54,6 +54,7 @@ def sync_agents(agents_dir: str, dry_run: bool, atrium_url: str | None) -> None:
     click.echo(f"{'agent_role':<25} {'status':<10} {'timeout':>8} {'budget':>12}")
     click.echo("-" * 60)
 
+    failed_roles: list[str] = []
     for p in profiles:
         if dry_run:
             click.echo(
@@ -78,10 +79,15 @@ def sync_agents(agents_dir: str, dry_run: bool, atrium_url: str | None) -> None:
             status = "upserted"
         except httpx.HTTPError as exc:
             status = f"ERROR: {exc}"
+            failed_roles.append(p.agent_role)
 
         click.echo(
             f"{p.agent_role:<25} {status:<10} {p.timeout_seconds:>8} {p.monthly_token_budget:>12}"
         )
+
+    if failed_roles:
+        roles_str = ", ".join(failed_roles)
+        raise click.ClickException(f"{len(failed_roles)} profile(s) failed to upsert: {roles_str}")
 
 
 if __name__ == "__main__":
