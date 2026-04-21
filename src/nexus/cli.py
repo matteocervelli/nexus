@@ -73,8 +73,7 @@ def sync_agents(agents_dir: str, dry_run: bool, atrium_url: str | None) -> None:
             "monthly_token_budget": p.monthly_token_budget,
             "is_active": p.is_active,
         }
-        if p.max_turns is not None:
-            payload["max_turns"] = p.max_turns
+        # max_turns not sent to Atrium until its schema is extended (follow-up issue)
         try:
             resp = httpx.post(f"{base_url}/api/agent_registry", json=payload, timeout=10)
             resp.raise_for_status()
