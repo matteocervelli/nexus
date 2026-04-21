@@ -51,7 +51,7 @@ class AgentRegistryEntry(BaseModel):
     id: uuid.UUID
     agent_role: str
     capability_class: str
-    execution_backend: Literal["codex-cli", "claude-code-cli", "anthropic-sdk", "openai-sdk"]
+    execution_backend: Literal["codex-sdk", "claude-code-cli", "anthropic-sdk", "process"]
     model: str
     profile_path: str
     tool_allowlist: list[str] = Field(default_factory=list)

@@ -6,7 +6,6 @@ These are module-level utilities that ClaudeAdapter needs. Not a library extract
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -106,19 +105,4 @@ def _is_transient(exc: BaseException) -> int | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# System prompt reader — strips YAML front-matter
-# ---------------------------------------------------------------------------
-
-_FENCED_YAML_RE = re.compile(r"^```yaml\n.*?\n```\n?", re.DOTALL)
-_DELIMITER_RE = re.compile(r"^---\n.*?\n---\n?", re.DOTALL)
-
-
-def _read_system_prompt(profile_path: str) -> str:
-    """Read CLAUDE.md, strip YAML front-matter, return the markdown body."""
-    with open(profile_path, encoding="utf-8") as fh:
-        text = fh.read()
-    body = _FENCED_YAML_RE.sub("", text, count=1)
-    if body == text:
-        body = _DELIMITER_RE.sub("", text, count=1)
-    return body.lstrip("\n")
+# System prompt reader moved to shared _profile module (imported by ClaudeAdapter directly).

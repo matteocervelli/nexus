@@ -1,6 +1,6 @@
 """Common runtime adapter contract for Nexus.
 
-Every execution backend (claude-code-cli, codex-cli, process, http) must
+Every execution backend (codex-sdk, claude-code-cli, anthropic-sdk, process) must
 implement AdapterBase. Nexus Core talks only to this interface.
 
 See: docs/adr/0003-runtime-adapter-contract.md

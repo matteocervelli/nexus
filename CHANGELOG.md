@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `CodexAdapter` rewritten using `openai-codex-sdk` (PyPI) — JSON-RPC subprocess over local `codex` binary; `SessionMode.RESUMABLE`, supports tool use and file system access (#57)
+- Intermediate `OpenAIAdapter` (chat.completions) reverted — lacked tool use, session resumption, and filesystem access (#57)
+- Registry key renamed `openai-sdk` → `codex-sdk`; `execution_backend` Literal updated; class renamed back to `CodexAdapter` (#57)
+- `openai` package removed from dependencies; replaced by `openai-codex-sdk>=0.1.11` (#57)
+- ADR-0006 updated: Tier 1 is now `codex-sdk` JSON-RPC binary subprocess, not HTTP chat.completions (#57)
 - `ClaudeAdapter` migrated from subprocess to `claude-agent-sdk` streaming — fixes agent_profile path passed as system prompt text (#55)
 - `scheduler._build_request` now forwards `entry.model`, `entry.tool_allowlist`, `entry.max_turns` into `AdapterRequest` — registry values previously ignored (#55)
 - `ClaudeAdapter` uses per-invocation `env` dict for stream timeout instead of mutating `os.environ` (#55)

@@ -23,7 +23,8 @@ from nexus.adapter_base import (
     UsageReport,
     ValidationResult,
 )
-from nexus.adapters._claude_sdk import _is_transient, _read_system_prompt, _stderr_handler
+from nexus.adapters._claude_sdk import _is_transient, _stderr_handler
+from nexus.adapters._profile import read_system_prompt as _read_system_prompt
 
 logger = structlog.get_logger(__name__)
 

@@ -1,6 +1,6 @@
-"""Headless subprocess validation for claude and codex CLIs.
+"""Headless subprocess validation for the Claude CLI.
 
-These are INTEGRATION tests — they make real API calls and require the CLIs
+These are INTEGRATION tests — they make real API calls and require the CLI
 to be installed and authenticated. Run with:
 
     pytest tests/test_validation/ -v -m integration
@@ -9,7 +9,7 @@ Skip in unit test runs:
 
     pytest tests/ -v -m "not integration"
 
-Empirical findings captured here form the mock baseline for Phase B adapters.
+Empirical findings captured here form the mock baseline for ClaudeAdapter.
 See: docs/headless-execution/claude-cli-headless.md
 """
 
@@ -30,7 +30,6 @@ import pytest
 # ---------------------------------------------------------------------------
 
 CLAUDE_BIN = shutil.which("claude")
-CODEX_BIN = shutil.which("codex")
 
 pytestmark = pytest.mark.integration
 
@@ -173,62 +172,3 @@ class TestClaudeHeadless:
         assert proc.returncode == 0
         data = json.loads(stdout.decode())
         assert "BEEP" in data["result"] or "BOOP" in data["result"]
-
-
-# ---------------------------------------------------------------------------
-# Codex CLI tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(not CODEX_BIN, reason="codex CLI not installed")
-class TestCodexHeadless:
-    def _env(self) -> dict[str, str]:
-        return {**os.environ, "NO_COLOR": "1"}
-
-    async def test_exec_returns_clean_stdout(self) -> None:
-        """codex exec: stdout is result text, stderr is diagnostic header."""
-        proc = await _spawn(
-            CODEX_BIN,
-            "exec",
-            "Return exactly the word: nexustest",
-            env=self._env(),  # type: ignore[arg-type]
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-
-        assert proc.returncode == 0
-        text = stdout.decode()
-        assert "\x1b" not in text, "ANSI found in codex stdout with NO_COLOR=1"
-        assert "nexustest" in text.lower()
-
-    async def test_exec_stderr_contains_session_id(self) -> None:
-        """codex writes session_id to stderr in its diagnostic header."""
-        proc = await _spawn(
-            CODEX_BIN,
-            "exec",
-            "Say: one",
-            env=self._env(),  # type: ignore[arg-type]
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-        assert proc.returncode == 0
-        assert b"session id:" in stderr.lower()
-
-    async def test_no_ansi_with_no_color_env(self) -> None:
-        proc = await _spawn(CODEX_BIN, "exec", "hello", env=self._env())  # type: ignore[arg-type]
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-        assert "\x1b" not in stdout.decode()
-
-    async def test_sigterm_exits_cleanly(self) -> None:
-        """codex exits with code 0 on SIGTERM (unlike claude's 143)."""
-        proc = await _spawn(
-            CODEX_BIN,
-            "exec",
-            "Count from 1 to 10000",
-            env=self._env(),
-            new_session=True,  # type: ignore[arg-type]
-        )
-        await asyncio.sleep(2)
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        await asyncio.wait_for(proc.communicate(), timeout=5)
-        # codex exits 0 on graceful SIGTERM (empirically verified 2026-04-20)
-        assert proc.returncode in (0, 130, 143), f"Unexpected exit: {proc.returncode}"
