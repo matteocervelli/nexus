@@ -19,6 +19,7 @@ from nexus.adapter_base import (
     AdapterDescription,
     AdapterRequest,
     AdapterResult,
+    AdapterStatus,
     SessionMode,
     UsageReport,
     ValidationResult,
@@ -79,6 +80,7 @@ class CodexAdapter(AdapterBase):
         tokens_used = len(stdout_decoded) // 4
 
         # Elapsed-based timeout detection: Codex exits 0 on SIGTERM so exit code is unreliable.
+        status: AdapterStatus
         if elapsed >= request.timeout_seconds:
             status = "timed_out"
         elif proc.returncode == 0:

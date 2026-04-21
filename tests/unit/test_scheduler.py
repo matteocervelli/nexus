@@ -79,7 +79,10 @@ async def test_tick_dispatches_pending_item():
 
     async with httpx.AsyncClient(base_url=_BASE) as client:
         checker = BudgetChecker(client)
-        with patch.object(checker, "check", new=AsyncMock(return_value=True)), patch("nexus.scheduler.ADAPTER_REGISTRY") as mock_registry:
+        with (
+            patch.object(checker, "check", new=AsyncMock(return_value=True)),
+            patch("nexus.scheduler.ADAPTER_REGISTRY") as mock_registry,
+        ):
             mock_adapter = AsyncMock()
             mock_adapter.invoke_heartbeat = AsyncMock(return_value=fake_result)
             mock_registry.__getitem__ = MagicMock(return_value=lambda: mock_adapter)
@@ -140,7 +143,10 @@ async def test_adapter_failure_maps_to_failed():
 
     async with httpx.AsyncClient(base_url=_BASE) as client:
         checker = BudgetChecker(client)
-        with patch.object(checker, "check", new=AsyncMock(return_value=True)), patch("nexus.scheduler.ADAPTER_REGISTRY") as mock_registry:
+        with (
+            patch.object(checker, "check", new=AsyncMock(return_value=True)),
+            patch("nexus.scheduler.ADAPTER_REGISTRY") as mock_registry,
+        ):
             mock_adapter = AsyncMock()
             mock_adapter.invoke_heartbeat = AsyncMock(return_value=fake_result)
             mock_registry.__getitem__ = MagicMock(return_value=lambda: mock_adapter)
@@ -229,7 +235,10 @@ async def test_dispatch_exception_patches_to_failed():
 
     async with httpx.AsyncClient(base_url=_BASE) as client:
         checker = BudgetChecker(client)
-        with patch.object(checker, "check", new=AsyncMock(return_value=True)), patch("nexus.scheduler.ADAPTER_REGISTRY") as mock_registry:
+        with (
+            patch.object(checker, "check", new=AsyncMock(return_value=True)),
+            patch("nexus.scheduler.ADAPTER_REGISTRY") as mock_registry,
+        ):
             mock_adapter = AsyncMock()
             mock_adapter.invoke_heartbeat = AsyncMock(side_effect=RuntimeError("adapter boom"))
             mock_registry.__getitem__ = MagicMock(return_value=lambda: mock_adapter)

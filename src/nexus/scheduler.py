@@ -120,8 +120,8 @@ class Scheduler:
             raise NotImplementedError(f"Unsupported condition DSL: {condition!r}")
 
         try:
-            value = float(raw_value)
-            data = float(data)
+            value = float(raw_value) if raw_value is not None else 0.0
+            data = float(data) if data is not None else 0.0
         except (TypeError, ValueError):
             pass
 

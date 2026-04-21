@@ -19,6 +19,7 @@ from nexus.adapter_base import (
     AdapterDescription,
     AdapterRequest,
     AdapterResult,
+    AdapterStatus,
     SessionMode,
     UsageReport,
     ValidationResult,
@@ -122,7 +123,7 @@ class ProcessAdapter(AdapterBase):
 
         finished_at = datetime.now(tz=UTC)
         exit_code = proc.returncode
-        status = "succeeded" if exit_code == 0 else "failed"
+        status: AdapterStatus = "succeeded" if exit_code == 0 else "failed"
         log.info("process.finished", exit_code=exit_code, status=status)
 
         return AdapterResult(
