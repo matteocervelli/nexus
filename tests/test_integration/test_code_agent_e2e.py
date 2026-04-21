@@ -11,8 +11,7 @@ Run locally:
 from __future__ import annotations
 
 import os
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -65,7 +64,7 @@ async def test_work_item_create_and_read(atrium: httpx.AsyncClient, test_work_it
 
 async def test_work_item_status_transition(atrium: httpx.AsyncClient, test_work_item: WorkItem):
     """Work item can be transitioned through pending → running → done."""
-    now = datetime.now(tz=timezone.utc).isoformat()
+    now = datetime.now(tz=UTC).isoformat()
 
     resp = await atrium.patch(
         f"/api/work_items/{test_work_item.id}",
@@ -86,7 +85,9 @@ async def test_work_item_status_transition(atrium: httpx.AsyncClient, test_work_
     assert body["token_cost"] == 500
 
 
-async def test_scheduler_poll_sees_pending_item(atrium: httpx.AsyncClient, test_work_item: WorkItem):
+async def test_scheduler_poll_sees_pending_item(
+    atrium: httpx.AsyncClient, test_work_item: WorkItem
+):
     """Scheduler poll endpoint returns the pending item in list."""
     resp = await atrium.get("/api/work_items", params={"status": "pending", "limit": 100})
     assert resp.status_code == 200

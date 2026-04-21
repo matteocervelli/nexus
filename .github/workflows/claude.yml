@@ -1,0 +1,35 @@
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+jobs:
+  copilot-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Request Copilot review
+        run: |
+          echo "Copilot code review requested for PR #${{ github.event.number }}"
+          echo "Enable: Settings → Copilot → Code review"
+
+  pr-title-check:
+    name: PR Title (conventional commits)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if echo "$PR_TITLE" | grep -qP '^(feat|fix|docs|style|refactor|test|chore|ci|build|perf|revert)(\(.+\))?(!)?: .+'; then
+            echo "PR title follows conventional commits format"
+          else
+            echo "WARNING: PR title does not follow conventional commits format"
+            echo "Got: $PR_TITLE"
+          fi

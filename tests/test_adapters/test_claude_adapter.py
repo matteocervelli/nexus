@@ -7,41 +7,40 @@ import json
 import pathlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from nexus.adapter_base import AdapterRequest, AdapterResult
 from nexus.adapters.claude_adapter import ClaudeAdapter
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-VALID_JSON_ENVELOPE = json.dumps({
-    "result": "Task complete.",
-    "session_id": "sess-abc123",
-    "cost_usd": 0.0045,
-    "usage": {
-        "input_tokens": 500,
-        "output_tokens": 150,
-        "cache_read_input_tokens": 0,
-        "cache_creation_input_tokens": 0,
-    },
-})
+VALID_JSON_ENVELOPE = json.dumps(
+    {
+        "result": "Task complete.",
+        "session_id": "sess-abc123",
+        "cost_usd": 0.0045,
+        "usage": {
+            "input_tokens": 500,
+            "output_tokens": 150,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        },
+    }
+)
 
 
 def _make_request(tmp_profile: pathlib.Path, **kwargs) -> AdapterRequest:
-    defaults = dict(
-        agent_id="agent-test",
-        agent_profile=str(tmp_profile),
-        work_item_id=1,
-        work_type="code",
-        priority="P2",
-        prompt_context="Do something useful.",
-        timeout_seconds=60,
-        correlation_id="corr-001",
-        session_ref=None,
-    )
+    defaults = {
+        "agent_id": "agent-test",
+        "agent_profile": str(tmp_profile),
+        "work_item_id": 1,
+        "work_type": "code",
+        "priority": "P2",
+        "prompt_context": "Do something useful.",
+        "timeout_seconds": 60,
+        "correlation_id": "corr-001",
+        "session_ref": None,
+    }
     defaults.update(kwargs)
     return AdapterRequest(**defaults)
 
@@ -96,9 +95,7 @@ class TestInvokeHeartbeat:
 
         with patch("asyncio.create_subprocess_exec", new=capture_exec):
             adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(
-                _make_request(tmp_profile_path, session_ref="abc123")
-            )
+            await adapter.invoke_heartbeat(_make_request(tmp_profile_path, session_ref="abc123"))
 
         assert "--session-id" in captured_args
         idx = captured_args.index("--session-id")
@@ -135,9 +132,7 @@ class TestResumeSession:
 
         with patch("asyncio.create_subprocess_exec", new=capture_exec):
             adapter = ClaudeAdapter()
-            await adapter.resume_session(
-                _make_request(tmp_profile_path, session_ref="resume-xyz")
-            )
+            await adapter.resume_session(_make_request(tmp_profile_path, session_ref="resume-xyz"))
 
         assert "--session-id" in captured_args
         idx = captured_args.index("--session-id")

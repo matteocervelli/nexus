@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import signal
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,21 +11,21 @@ from nexus.adapters.process_adapter import ProcessAdapter
 
 
 def make_request(**overrides) -> AdapterRequest:
-    defaults = dict(
-        agent_id="test-agent",
-        agent_profile="test-profile",
-        work_item_id=1,
-        work_type="test",
-        priority="P2",
-        prompt_context="do the thing",
-        timeout_seconds=30,
-        correlation_id="corr-123",
-        extra={
+    defaults = {
+        "agent_id": "test-agent",
+        "agent_profile": "test-profile",
+        "work_item_id": 1,
+        "work_type": "test",
+        "priority": "P2",
+        "prompt_context": "do the thing",
+        "timeout_seconds": 30,
+        "correlation_id": "corr-123",
+        "extra": {
             "executable": "/usr/bin/echo",
             "args": ["hello"],
             "stdin_mode": "prompt",
         },
-    )
+    }
     defaults.update(overrides)
     return AdapterRequest(**defaults)
 
@@ -89,15 +86,19 @@ class TestProcessAdapterValidateEnvironment:
         script = tmp_path / "script.sh"
         script.write_text("#!/bin/sh\necho hi")
         # exists but not executable
-        with patch("shutil.which", return_value=str(script)), patch("os.access", return_value=False):
+        with (
+            patch("shutil.which", return_value=str(script)),
+            patch("os.access", return_value=False),
+        ):
             result = await adapter.validate_environment({"executable": str(script)})
         assert result.ok is False
         assert result.errors
 
     async def test_valid_executable_returns_ok(self):
         adapter = ProcessAdapter()
-        with patch("shutil.which", return_value="/usr/bin/echo"), patch(
-            "os.access", return_value=True
+        with (
+            patch("shutil.which", return_value="/usr/bin/echo"),
+            patch("os.access", return_value=True),
         ):
             result = await adapter.validate_environment({"executable": "echo"})
         assert result.ok is True
@@ -110,8 +111,9 @@ class TestProcessAdapterInvokeHeartbeat:
         request = make_request()
         proc = make_proc(returncode=0, stdout=b"output line\n")
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)) as mock_exec, patch(
-            "shutil.which", return_value="/usr/bin/echo"
+        with (
+            patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
+            patch("shutil.which", return_value="/usr/bin/echo"),
         ):
             result = await adapter.invoke_heartbeat(request)
 
@@ -126,8 +128,9 @@ class TestProcessAdapterInvokeHeartbeat:
         request = make_request()
         proc = make_proc(returncode=1, stderr=b"error")
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)), patch(
-            "shutil.which", return_value="/usr/bin/echo"
+        with (
+            patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
+            patch("shutil.which", return_value="/usr/bin/echo"),
         ):
             result = await adapter.invoke_heartbeat(request)
 
@@ -139,8 +142,9 @@ class TestProcessAdapterInvokeHeartbeat:
         request = make_request()
         proc = make_proc(returncode=139, stderr=b"Segmentation fault")
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)), patch(
-            "shutil.which", return_value="/usr/bin/echo"
+        with (
+            patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
+            patch("shutil.which", return_value="/usr/bin/echo"),
         ):
             result = await adapter.invoke_heartbeat(request)
 
@@ -152,13 +156,16 @@ class TestProcessAdapterInvokeHeartbeat:
         request = make_request()
         proc = MagicMock()
         proc.pid = 42
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+        proc.communicate = AsyncMock(side_effect=TimeoutError())
         proc.send_signal = MagicMock()
         proc.wait = AsyncMock()
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)), patch(
-            "shutil.which", return_value="/usr/bin/echo"
-        ), patch("os.killpg", MagicMock()), patch("os.getpgid", return_value=42):
+        with (
+            patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
+            patch("shutil.which", return_value="/usr/bin/echo"),
+            patch("os.killpg", MagicMock()),
+            patch("os.getpgid", return_value=42),
+        ):
             result = await adapter.invoke_heartbeat(request)
 
         assert result.status == "timed_out"
@@ -170,8 +177,9 @@ class TestProcessAdapterInvokeHeartbeat:
         )
         proc = make_proc(returncode=0)
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)), patch(
-            "shutil.which", return_value="/usr/bin/cat"
+        with (
+            patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
+            patch("shutil.which", return_value="/usr/bin/cat"),
         ):
             result = await adapter.invoke_heartbeat(request)
 

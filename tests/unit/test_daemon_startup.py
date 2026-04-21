@@ -8,7 +8,6 @@ import uuid
 from unittest.mock import patch
 
 import httpx
-import pytest
 import respx
 
 from nexus.daemon import reconcile_orphans
@@ -56,9 +55,7 @@ async def test_dead_pid_patches_to_failed():
 
 @respx.mock
 async def test_no_running_items_is_noop():
-    respx.get(f"{_BASE}/api/work_items").mock(
-        return_value=httpx.Response(200, json=[])
-    )
+    respx.get(f"{_BASE}/api/work_items").mock(return_value=httpx.Response(200, json=[]))
     async with httpx.AsyncClient(base_url=_BASE) as client:
         await reconcile_orphans(client)
 
@@ -66,9 +63,7 @@ async def test_no_running_items_is_noop():
 @respx.mock
 async def test_item_without_pid_marked_failed():
     item = _item(_ID2, pid=None)
-    respx.get(f"{_BASE}/api/work_items").mock(
-        return_value=httpx.Response(200, json=[item])
-    )
+    respx.get(f"{_BASE}/api/work_items").mock(return_value=httpx.Response(200, json=[item]))
     patch_route = respx.patch(f"{_BASE}/api/work_items/{_ID2}").mock(
         return_value=httpx.Response(200, json={})
     )
@@ -99,9 +94,11 @@ async def test_live_pid_is_sigtermd_and_marked_failed():
             if liveness_count > 1:
                 raise ProcessLookupError  # dead after SIGTERM
 
-    with patch("os.kill", side_effect=fake_kill), \
-         patch("os.getpgid", return_value=77777), \
-         patch("asyncio.sleep"):
+    with (
+        patch("os.kill", side_effect=fake_kill),
+        patch("os.getpgid", return_value=77777),
+        patch("asyncio.sleep"),
+    ):
         async with httpx.AsyncClient(base_url=_BASE) as client:
             await reconcile_orphans(client)
 
@@ -116,8 +113,12 @@ async def test_multiple_orphans_all_patched():
     respx.get(f"{_BASE}/api/work_items").mock(
         return_value=httpx.Response(200, json=[_item(id_a, 11111), _item(id_b, 22222)])
     )
-    pa = respx.patch(f"{_BASE}/api/work_items/{id_a}").mock(return_value=httpx.Response(200, json={}))
-    pb = respx.patch(f"{_BASE}/api/work_items/{id_b}").mock(return_value=httpx.Response(200, json={}))
+    pa = respx.patch(f"{_BASE}/api/work_items/{id_a}").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    pb = respx.patch(f"{_BASE}/api/work_items/{id_b}").mock(
+        return_value=httpx.Response(200, json={})
+    )
 
     with patch("os.kill", side_effect=ProcessLookupError):
         async with httpx.AsyncClient(base_url=_BASE) as client:

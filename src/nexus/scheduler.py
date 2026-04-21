@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -18,7 +18,7 @@ import structlog
 from nexus.adapter_base import AdapterRequest, AdapterResult
 from nexus.adapters import ADAPTER_REGISTRY
 from nexus.budget import BudgetChecker
-from nexus.models import AgentRegistryEntry, WorkItem, WorkflowStep
+from nexus.models import AgentRegistryEntry, WorkflowStep, WorkItem
 
 logger = structlog.get_logger(__name__)
 
@@ -178,7 +178,9 @@ class Scheduler:
             resp = await self._client.get(f"/api/agent_registry/{agent_role}")
             if resp.status_code == 200:
                 return AgentRegistryEntry.model_validate(resp.json())
-            logger.error("scheduler.registry_not_found", agent_role=agent_role, status=resp.status_code)
+            logger.error(
+                "scheduler.registry_not_found", agent_role=agent_role, status=resp.status_code
+            )
         except Exception as exc:
             logger.error("scheduler.registry_fetch_error", error=str(exc))
         return None
@@ -198,7 +200,7 @@ class Scheduler:
 
 
 def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def _build_request(item: WorkItem, entry: AgentRegistryEntry) -> AdapterRequest:

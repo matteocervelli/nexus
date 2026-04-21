@@ -9,7 +9,7 @@ import asyncio
 import os
 import shutil
 import signal
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -48,22 +48,26 @@ class ProcessAdapter(AdapterBase):
 
         resolved = shutil.which(executable)
         if resolved is None:
-            return ValidationResult(ok=False, errors=[f"executable not found on PATH: {executable}"])
+            return ValidationResult(
+                ok=False, errors=[f"executable not found on PATH: {executable}"]
+            )
 
         if not os.access(resolved, os.X_OK):
-            return ValidationResult(ok=False, errors=[f"file exists but is not executable: {resolved}"])
+            return ValidationResult(
+                ok=False, errors=[f"file exists but is not executable: {resolved}"]
+            )
 
         return ValidationResult(ok=True)
 
     async def invoke_heartbeat(self, request: AdapterRequest) -> AdapterResult:
-        started_at = datetime.now(tz=timezone.utc)
+        started_at = datetime.now(tz=UTC)
         executable = request.extra.get("executable")
         args: list[str] = request.extra.get("args", [])
         stdin_mode: str = request.extra.get("stdin_mode", "prompt")
 
         resolved = shutil.which(executable) if executable else None
         if resolved is None:
-            finished_at = datetime.now(tz=timezone.utc)
+            finished_at = datetime.now(tz=UTC)
             return AdapterResult(
                 status="environment_error",
                 started_at=started_at,
@@ -92,10 +96,10 @@ class ProcessAdapter(AdapterBase):
                     proc.communicate(input=stdin_data),
                     timeout=request.timeout_seconds,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.warning("process.timed_out", pid=proc.pid)
                 await _terminate(proc)
-                finished_at = datetime.now(tz=timezone.utc)
+                finished_at = datetime.now(tz=UTC)
                 return AdapterResult(
                     status="timed_out",
                     started_at=started_at,
@@ -107,7 +111,7 @@ class ProcessAdapter(AdapterBase):
 
         except Exception as exc:
             log.exception("process.spawn_error", error=str(exc))
-            finished_at = datetime.now(tz=timezone.utc)
+            finished_at = datetime.now(tz=UTC)
             return AdapterResult(
                 status="failed",
                 started_at=started_at,
@@ -116,7 +120,7 @@ class ProcessAdapter(AdapterBase):
                 error_message=str(exc),
             )
 
-        finished_at = datetime.now(tz=timezone.utc)
+        finished_at = datetime.now(tz=UTC)
         exit_code = proc.returncode
         status = "succeeded" if exit_code == 0 else "failed"
         log.info("process.finished", exit_code=exit_code, status=status)
@@ -154,7 +158,7 @@ async def _terminate(proc: asyncio.subprocess.Process) -> None:
 
     try:
         await asyncio.wait_for(proc.wait(), timeout=_SIGKILL_WAIT)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         try:
             pgid = os.getpgid(proc.pid)
             os.killpg(pgid, signal.SIGKILL)

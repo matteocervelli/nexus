@@ -12,10 +12,10 @@ Heartbeat interval and Atrium URL are controlled by env vars:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import signal
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -47,9 +47,7 @@ async def reconcile_orphans(atrium_client: httpx.AsyncClient) -> None:
     log = logger.bind(phase="startup.reconcile_orphans")
 
     try:
-        resp = await atrium_client.get(
-            "/api/work_items", params={"status": "running"}
-        )
+        resp = await atrium_client.get("/api/work_items", params={"status": "running"})
         resp.raise_for_status()
         items: list[dict[str, Any]] = resp.json()
     except Exception as exc:
@@ -200,13 +198,11 @@ class NexusDaemon:
             except Exception as exc:
                 log.error("daemon.tick_error", error=str(exc))
 
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     asyncio.shield(self._stop_event.wait()),
                     timeout=self._heartbeat_interval,
                 )
-            except asyncio.TimeoutError:
-                pass  # normal — just means it's time for next tick
 
     async def _tick(self, client: httpx.AsyncClient) -> None:
         if self._scheduler is None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -46,7 +46,7 @@ class CodexAdapter(AdapterBase):
         return ValidationResult(ok=True)
 
     async def invoke_heartbeat(self, request: AdapterRequest) -> AdapterResult:
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         start = time.monotonic()
 
         try:
@@ -59,7 +59,7 @@ class CodexAdapter(AdapterBase):
                 start_new_session=True,
             )
         except OSError as exc:
-            finished_at = datetime.now(timezone.utc)
+            finished_at = datetime.now(UTC)
             logger.error("codex.spawn_error", work_item_id=request.work_item_id, error=str(exc))
             return AdapterResult(
                 status="failed",
@@ -86,7 +86,7 @@ class CodexAdapter(AdapterBase):
         else:
             status = "failed"
 
-        finished_at = datetime.now(timezone.utc)
+        finished_at = datetime.now(UTC)
         logger.info(
             "codex.run_complete",
             work_item_id=request.work_item_id,

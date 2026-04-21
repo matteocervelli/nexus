@@ -71,7 +71,11 @@ class TestClaudeHeadless:
     async def test_json_mode_envelope_shape(self) -> None:
         """--output-format json returns parseable envelope with expected keys."""
         proc = await _spawn(
-            CLAUDE_BIN, "-p", "Reply: ok", "--output-format", "json"  # type: ignore[arg-type]
+            CLAUDE_BIN,
+            "-p",
+            "Reply: ok",
+            "--output-format",
+            "json",  # type: ignore[arg-type]
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
 
@@ -91,7 +95,11 @@ class TestClaudeHeadless:
     async def test_json_mode_no_ansi_in_result_field(self) -> None:
         """result field inside JSON envelope must be plain text."""
         proc = await _spawn(
-            CLAUDE_BIN, "-p", "Say hello in one word", "--output-format", "json"  # type: ignore[arg-type]
+            CLAUDE_BIN,
+            "-p",
+            "Say hello in one word",
+            "--output-format",
+            "json",  # type: ignore[arg-type]
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
         data = json.loads(stdout.decode())
@@ -180,7 +188,10 @@ class TestCodexHeadless:
     async def test_exec_returns_clean_stdout(self) -> None:
         """codex exec: stdout is result text, stderr is diagnostic header."""
         proc = await _spawn(
-            CODEX_BIN, "exec", "Return exactly the word: nexustest", env=self._env()  # type: ignore[arg-type]
+            CODEX_BIN,
+            "exec",
+            "Return exactly the word: nexustest",
+            env=self._env(),  # type: ignore[arg-type]
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
 
@@ -192,7 +203,10 @@ class TestCodexHeadless:
     async def test_exec_stderr_contains_session_id(self) -> None:
         """codex writes session_id to stderr in its diagnostic header."""
         proc = await _spawn(
-            CODEX_BIN, "exec", "Say: one", env=self._env()  # type: ignore[arg-type]
+            CODEX_BIN,
+            "exec",
+            "Say: one",
+            env=self._env(),  # type: ignore[arg-type]
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         assert proc.returncode == 0
@@ -206,7 +220,11 @@ class TestCodexHeadless:
     async def test_sigterm_exits_cleanly(self) -> None:
         """codex exits with code 0 on SIGTERM (unlike claude's 143)."""
         proc = await _spawn(
-            CODEX_BIN, "exec", "Count from 1 to 10000", env=self._env(), new_session=True  # type: ignore[arg-type]
+            CODEX_BIN,
+            "exec",
+            "Count from 1 to 10000",
+            env=self._env(),
+            new_session=True,  # type: ignore[arg-type]
         )
         await asyncio.sleep(2)
         with contextlib.suppress(ProcessLookupError):

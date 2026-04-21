@@ -29,7 +29,5 @@ def tmp_profile_path(tmp_path: pathlib.Path) -> pathlib.Path:
     """Minimal agent profile directory with a CLAUDE.md stub."""
     profile = tmp_path / "agent-profile"
     profile.mkdir()
-    (profile / "CLAUDE.md").write_text(
-        "# Test Agent\nYou are a test agent. Reply concisely.\n"
-    )
+    (profile / "CLAUDE.md").write_text("# Test Agent\nYou are a test agent. Reply concisely.\n")
     return profile

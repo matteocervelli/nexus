@@ -11,7 +11,7 @@ Any Atrium error → fail safe (block spawn, never proceed blind).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -35,8 +35,10 @@ class BudgetChecker:
         When False and work_item_id is provided, patches work_item to failed
         and creates a Limen notification work_item.
         """
-        year_month = datetime.now(tz=timezone.utc).strftime("%Y-%m")
-        log = logger.bind(agent_role=agent_role, work_item_id=str(work_item_id), year_month=year_month)
+        year_month = datetime.now(tz=UTC).strftime("%Y-%m")
+        log = logger.bind(
+            agent_role=agent_role, work_item_id=str(work_item_id), year_month=year_month
+        )
 
         # Step 1: get current usage
         try:

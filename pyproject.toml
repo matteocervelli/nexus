@@ -24,6 +24,7 @@ packages = ["src/nexus"]
 dev = [
     "ruff>=0.4",
     "mypy>=1.10",
+    "bandit>=1.7",
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "respx>=0.21",

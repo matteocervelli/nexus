@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,7 +25,9 @@ def _make_request(**kwargs) -> AdapterRequest:
     return AdapterRequest(**defaults)
 
 
-def _make_proc(returncode: int = 0, stdout: bytes = b"result output", stderr: bytes = b"") -> AsyncMock:
+def _make_proc(
+    returncode: int = 0, stdout: bytes = b"result output", stderr: bytes = b""
+) -> AsyncMock:
     proc = AsyncMock()
     proc.pid = 12345
     proc.returncode = returncode
@@ -128,7 +128,9 @@ class TestValidateEnvironment:
     async def test_codex_found(self):
         """shutil.which('codex') returns a path → ValidationResult(ok=True)."""
         adapter = CodexAdapter()
-        with patch("nexus.adapters.codex_adapter.shutil.which", return_value="/usr/local/bin/codex"):
+        with patch(
+            "nexus.adapters.codex_adapter.shutil.which", return_value="/usr/local/bin/codex"
+        ):
             result = await adapter.validate_environment({})
         assert result.ok is True
 
@@ -146,14 +148,18 @@ class TestDescribe:
 class TestHealthcheck:
     async def test_returns_true_on_exit_0(self):
         proc = _make_proc(returncode=0, stdout=b"codex 1.0.0")
-        with patch("nexus.adapters.codex_adapter.asyncio.create_subprocess_exec", return_value=proc):
+        with patch(
+            "nexus.adapters.codex_adapter.asyncio.create_subprocess_exec", return_value=proc
+        ):
             adapter = CodexAdapter()
             ok = await adapter.healthcheck({})
         assert ok is True
 
     async def test_returns_false_on_exit_nonzero(self):
         proc = _make_proc(returncode=1)
-        with patch("nexus.adapters.codex_adapter.asyncio.create_subprocess_exec", return_value=proc):
+        with patch(
+            "nexus.adapters.codex_adapter.asyncio.create_subprocess_exec", return_value=proc
+        ):
             adapter = CodexAdapter()
             ok = await adapter.healthcheck({})
         assert ok is False

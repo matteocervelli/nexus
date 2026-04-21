@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import httpx
-import pytest
 import respx
 
 from nexus.budget import BudgetChecker
@@ -25,7 +24,7 @@ def _ledger(tokens_consumed: int, paused_at: datetime | None = None) -> dict:
         "cost_usd": 0.0,
         "run_count": 1,
         "paused_at": paused_at.isoformat() if paused_at else None,
-        "created_at": datetime.now(tz=timezone.utc).isoformat(),
+        "created_at": datetime.now(tz=UTC).isoformat(),
         "updated_at": None,
     }
 
@@ -42,7 +41,7 @@ def _agent(monthly_token_budget: int = 10000) -> dict:
         "timeout_seconds": 300,
         "monthly_token_budget": monthly_token_budget,
         "is_active": True,
-        "created_at": datetime.now(tz=timezone.utc).isoformat(),
+        "created_at": datetime.now(tz=UTC).isoformat(),
         "updated_at": None,
     }
 
@@ -83,16 +82,14 @@ async def test_no_ledger_row_allows_spawn():
 
 @respx.mock
 async def test_paused_agent_returns_false():
-    paused = datetime.now(tz=timezone.utc)
+    paused = datetime.now(tz=UTC)
     respx.get(f"{_BASE}/api/budget_ledger").mock(
         return_value=httpx.Response(200, json=_ledger(0, paused_at=paused))
     )
     respx.patch(f"{_BASE}/api/work_items/{_WORK_ITEM_ID}").mock(
         return_value=httpx.Response(200, json={})
     )
-    respx.post(f"{_BASE}/api/work_items").mock(
-        return_value=httpx.Response(201, json={})
-    )
+    respx.post(f"{_BASE}/api/work_items").mock(return_value=httpx.Response(201, json={}))
     async with httpx.AsyncClient(base_url=_BASE) as client:
         assert await BudgetChecker(client).check(_AGENT_ROLE, _WORK_ITEM_ID) is False
 
@@ -115,9 +112,7 @@ async def test_over_budget_patches_work_item():
     patch_route = respx.patch(f"{_BASE}/api/work_items/{_WORK_ITEM_ID}").mock(
         return_value=httpx.Response(200, json={})
     )
-    respx.post(f"{_BASE}/api/work_items").mock(
-        return_value=httpx.Response(201, json={})
-    )
+    respx.post(f"{_BASE}/api/work_items").mock(return_value=httpx.Response(201, json={}))
     async with httpx.AsyncClient(base_url=_BASE) as client:
         result = await BudgetChecker(client).check(_AGENT_ROLE, _WORK_ITEM_ID)
 
@@ -125,6 +120,7 @@ async def test_over_budget_patches_work_item():
     assert patch_route.called
     patched_body = patch_route.calls[0].request.content
     import json
+
     body = json.loads(patched_body)
     assert body["status"] == "failed"
 

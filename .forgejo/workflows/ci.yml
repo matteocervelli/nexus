@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      [main, "feature/**", "fix/**", "chore/**", "sprint-1/**", "sprint-2/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  format:
+    runs-on: python-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install uv
+      - name: Install dependencies
+        run: uv sync --locked
+      - run: uv run ruff format --check .
+
+  lint:
+    runs-on: python-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install uv
+      - name: Install dependencies
+        run: uv sync --locked
+      - run: uv run ruff check .
+
+  typecheck:
+    runs-on: python-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install uv
+      - name: Install dependencies
+        run: uv sync --locked
+      - run: uv run mypy src/
+
+  security:
+    runs-on: python-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install uv
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Security scan
+        run: uv run bandit -r src/ -ll --exit-zero
+
+  test:
+    runs-on: python-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install uv
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run unit tests
+        run: uv run pytest -m "not integration and not e2e" --tb=short -q

@@ -12,7 +12,7 @@ import os
 import shutil
 import signal
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -33,7 +33,7 @@ _EXCERPT_LIMIT = 4096
 
 
 def _now() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def _truncate(text: str) -> str:
@@ -87,7 +87,8 @@ class ClaudeAdapter(AdapterBase):
     async def healthcheck(self, config: dict[str, Any]) -> bool:
         try:
             proc = await asyncio.create_subprocess_exec(
-                "claude", "--version",
+                "claude",
+                "--version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
@@ -104,9 +105,12 @@ class ClaudeAdapter(AdapterBase):
     def _build_argv(self, request: AdapterRequest) -> list[str]:
         argv = [
             "claude",
-            "--system-prompt", request.agent_profile,
-            "--output-format", "json",
-            "-p", request.prompt_context,
+            "--system-prompt",
+            request.agent_profile,
+            "--output-format",
+            "json",
+            "-p",
+            request.prompt_context,
             "--no-color",
         ]
         if request.session_ref is not None:
@@ -147,13 +151,13 @@ class ClaudeAdapter(AdapterBase):
                 proc.communicate(),
                 timeout=request.timeout_seconds,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             finished_at = _now()
             log.warning("run.timed_out", timeout_seconds=request.timeout_seconds)
             proc.terminate()
             try:
                 await asyncio.wait_for(proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 except OSError:
