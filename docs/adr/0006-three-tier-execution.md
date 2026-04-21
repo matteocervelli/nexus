@@ -19,18 +19,18 @@ Nexus uses **three execution tiers**:
 
 | Tier | Backend                                       | Use case                               |
 | ---- | --------------------------------------------- | -------------------------------------- |
-| 1    | `codex-cli` / `openai-sdk` subprocess         | Headless bulk work, long-running scans |
+| 1    | `codex-sdk` JSON-RPC binary subprocess        | Headless bulk work, long-running scans |
 | 2    | `claude-code-cli` subprocess with `--profile` | Persona-driven expert work             |
-| 3    | `anthropic-sdk` / `openai-sdk` direct client  | Structured programmatic workflows      |
+| 3    | `anthropic-sdk` direct client                 | Structured programmatic workflows      |
 
 Each persona record in `agent_registry` must declare:
 
-- `execution_backend`: one of `codex-cli`, `claude-code-cli`, `anthropic-sdk`, `openai-sdk`
+- `execution_backend`: one of `codex-sdk`, `claude-code-cli`, `anthropic-sdk`
 - `model`: explicit model ID (e.g. `gpt-4o`, `claude-sonnet-4-6`, `claude-haiku-4-5`, `claude-opus-4-6`)
 
 ## Rationale
 
-1. **Tier 1 (Codex)** handles bulk work efficiently within the OpenAI bundled subscription. Headless task execution does not require Claude's specialized toolset.
+1. **Tier 1 (Codex SDK)** handles bulk work via `openai-codex-sdk` (PyPI) which controls the local `codex` binary over JSON-RPC. Supports session resumption, tool use, filesystem access, and sandbox mode — the correct equivalent of `claude-agent-sdk` for OpenAI. Uses async streaming events (`ThreadStartedEvent`, `ItemCompletedEvent`, `TurnCompletedEvent`). An intermediate implementation using `openai.chat.completions.create` was reverted because it lacked tool use, file system access, and session resumption (see issue #57).
 
 2. **Tier 2 (Claude Code persona)** is the primary execution tier for adlimen agent roles. The `--profile` flag loads a specialized `CLAUDE.md` that shapes tool access, persona, and task focus. This is the pattern already validated in the 7-capability-class design.
 
@@ -42,9 +42,9 @@ Each persona record in `agent_registry` must declare:
 ## Consequences
 
 - `spawner.py` implements separate adapters for subprocess-based tiers (1, 2) and API-based tier (3)
-- `codex` and `claude-code-cli` adapters inherit the same subprocess management pattern: `asyncio.create_subprocess_exec`, `asyncio.wait_for`, `os.killpg` cleanup
-- `anthropic-sdk` and `openai-sdk` adapters use async HTTP client; no subprocess involved
-- Token cost tracking: estimation for bundled tiers (1, 2), exact metered cost for API tier (3)
+- All three tiers implement the same `AdapterBase` interface (ADR-0003)
+- `codex-sdk` adapter is `SessionMode.RESUMABLE`; `claude-code-cli` is `SessionMode.RESUMABLE`; `anthropic-sdk` may be ephemeral or resumable depending on implementation
+- Token cost tracking: estimated from local pricing table for Tier 1 (`openai-codex-sdk` returns token counts via `TurnCompletedEvent.usage` but not cost); Tier 2 via claude-agent-sdk; Tier 3 exact via direct API response
 - `agent_registry` schema must include `execution_backend` and `model` as required fields — no defaults
 
 ## References

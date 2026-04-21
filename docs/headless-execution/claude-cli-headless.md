@@ -111,68 +111,15 @@ Exit code 143 indicates SIGTERM was received.
 
 ---
 
-# Codex CLI — Headless Execution Findings
+# Codex SDK — Migration Note
 
-Empirically verified on **2026-04-20** with `codex-cli 0.121.0` on Linux x86-64.
-
-## Recommended Invocation
-
-```
-NO_COLOR=1 codex exec "<prompt>"
-```
-
-## Key Differences from Claude
-
-| Dimension         | claude                  | codex                                          |
-| ----------------- | ----------------------- | ---------------------------------------------- |
-| stdout            | response text or JSON   | response text only                             |
-| stderr            | empty                   | diagnostic header (version, model, session_id) |
-| ANSI              | never                   | suppressed by `NO_COLOR=1`                     |
-| SIGTERM exit code | 143                     | 0 (graceful)                                   |
-| JSON mode         | `--output-format json`  | no equivalent                                  |
-| Session resume    | `--resume <session_id>` | `codex exec resume` subcommand                 |
-| Profile/persona   | `--system-prompt`       | `-c` config override                           |
-
-## Output Structure
-
-stdout: pure result text (no envelope)
-stderr: human-readable diagnostic header containing session_id, model, workdir
-
-```
-OpenAI Codex v0.121.0 (research preview)
---------
-workdir: /path/to/project
-model: gpt-5.4
-session id: 019dabea-75a7-78b1-8e38-c1c3fd09e7a6
---------
-```
-
-Parse `session id:` line from stderr to extract session_id.
-
-## Exit Code Taxonomy
-
-| Code | Meaning                                        |
-| ---- | ---------------------------------------------- |
-| 0    | Success **or** graceful SIGTERM                |
-| 1    | Error (unsupported model, API error, bad args) |
-
-Note: codex returns exit code 0 on SIGTERM, unlike claude's 143. The adapter must not rely on
-exit code alone to detect cancellation.
-
-## Model Constraints
-
-- Default model: `gpt-5.4` (ChatGPT account)
-- `-m gpt-4o-mini` fails with ChatGPT auth ("model not supported")
-- Only models approved for the connected account work with `codex exec`
-- Do not assume arbitrary model strings will work
-
-## ANSI Suppression
-
-Set `NO_COLOR=1` in the subprocess environment. Verified to eliminate all ANSI from stdout.
-
-## Implications for Nexus Adapters (Phase B)
-
-1. **Claude adapter**: use `--output-format json` — cost, session_id, usage parsed directly.
-2. **Codex adapter**: parse `session_id` from stderr, not stdout.
-3. **Cancellation detection**: cannot rely on exit code for codex — track wall-clock timeout separately.
-4. **Profile injection** for claude: read CLAUDE.md from profile dir, pass as `--system-prompt`.
+> **Note:** The former `codex-cli` subprocess adapter was replaced by the `codex-sdk` adapter
+> in issue #57 (2026-04-21), using `openai-codex-sdk` (PyPI) which controls the local `codex`
+> binary over JSON-RPC. An intermediate approach using `openai.chat.completions.create` was
+> reverted because it lacked tool use, file system access, and session resumption.
+>
+> The `codex-sdk` adapter uses `openai_codex_sdk.Codex` — async streaming events
+> (`ThreadStartedEvent`, `ItemCompletedEvent`, `TurnCompletedEvent`), `SessionMode.RESUMABLE`.
+>
+> Empirical Codex CLI findings from this section were used to inform mock design during
+> Phase A and are preserved here for historical reference only.

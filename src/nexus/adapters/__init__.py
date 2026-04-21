@@ -12,12 +12,12 @@ Scheduler usage:
 from __future__ import annotations
 
 from nexus.adapters.claude_adapter import ClaudeAdapter
-from nexus.adapters.codex_adapter import CodexAdapter
+from nexus.adapters.openai_adapter import CodexAdapter
 from nexus.adapters.process_adapter import ProcessAdapter
 
 ADAPTER_REGISTRY: dict[str, type] = {
     "claude-code-cli": ClaudeAdapter,
-    "codex-cli": CodexAdapter,
+    "codex-sdk": CodexAdapter,
     "process": ProcessAdapter,
 }
 
