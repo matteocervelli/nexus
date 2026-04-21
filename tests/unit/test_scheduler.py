@@ -251,3 +251,78 @@ async def test_dispatch_exception_patches_to_failed():
     last_body = _json.loads(patch_route.calls[-1].request.content)
     assert last_body["status"] == "failed"
     assert "error" in last_body.get("result", {})
+
+
+def test_build_request_plumbs_model_tools_max_turns():
+    """_build_request forwards model, tool_allowlist, and max_turns from registry entry."""
+    from datetime import UTC, datetime
+
+    from nexus.models import AgentRegistryEntry, WorkItem
+    from nexus.scheduler import _build_request
+
+    entry = AgentRegistryEntry(
+        id=_AGENT_ID,
+        agent_role=_AGENT_ROLE,
+        capability_class="code",
+        execution_backend="claude-code-cli",
+        model="claude-opus-4-7",
+        profile_path="agents/code-agent/CLAUDE.md",
+        tool_allowlist=["Read", "Bash"],
+        timeout_seconds=300,
+        monthly_token_budget=100000,
+        is_active=True,
+        created_at=datetime.now(tz=UTC),
+        max_turns=80,
+    )
+
+    item = WorkItem(
+        id=_ITEM_ID,
+        type="code_task",
+        agent_role=_AGENT_ROLE,
+        priority="P2",
+        status="pending",
+        context={"task": "do something"},
+        created_at=datetime.now(tz=UTC),
+    )
+
+    request = _build_request(item, entry)
+
+    assert request.extra.get("model") == "claude-opus-4-7"
+    assert request.extra.get("max_turns") == 80
+    assert request.tools_allowlist == ["Read", "Bash"]
+
+
+def test_build_request_max_turns_defaults_to_80_when_none():
+    """When entry.max_turns is None, extra['max_turns'] defaults to 80."""
+    from datetime import UTC, datetime
+
+    from nexus.models import AgentRegistryEntry, WorkItem
+    from nexus.scheduler import _build_request
+
+    entry = AgentRegistryEntry(
+        id=_AGENT_ID,
+        agent_role=_AGENT_ROLE,
+        capability_class="code",
+        execution_backend="claude-code-cli",
+        model="claude-sonnet-4-6",
+        profile_path="agents/code-agent/CLAUDE.md",
+        tool_allowlist=[],
+        timeout_seconds=300,
+        monthly_token_budget=100000,
+        is_active=True,
+        created_at=datetime.now(tz=UTC),
+        max_turns=None,
+    )
+
+    item = WorkItem(
+        id=_ITEM_ID,
+        type="code_task",
+        agent_role=_AGENT_ROLE,
+        priority="P2",
+        status="pending",
+        context={},
+        created_at=datetime.now(tz=UTC),
+    )
+
+    request = _build_request(item, entry)
+    assert request.extra.get("max_turns") == 80

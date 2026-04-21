@@ -216,4 +216,8 @@ def _build_request(item: WorkItem, entry: AgentRegistryEntry) -> AdapterRequest:
         timeout_seconds=entry.timeout_seconds,
         correlation_id=str(item.id),
         tools_allowlist=entry.tool_allowlist,
+        extra={
+            "model": entry.model,
+            "max_turns": entry.max_turns if entry.max_turns is not None else 80,
+        },
     )

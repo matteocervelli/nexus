@@ -58,6 +58,7 @@ class AgentRegistryEntry(BaseModel):
     timeout_seconds: int
     monthly_token_budget: int
     is_active: bool = True
+    max_turns: int | None = None
     created_at: datetime
     updated_at: datetime | None = None
 

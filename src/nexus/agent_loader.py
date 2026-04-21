@@ -30,6 +30,7 @@ class AgentProfile:
     profile_path: str
     tool_allowlist: list[str] = field(default_factory=list)
     is_active: bool = True
+    max_turns: int | None = None
 
 
 def _parse_yaml_value(raw: str) -> Any:
@@ -80,6 +81,7 @@ def load_agent_profiles(agents_dir: pathlib.Path) -> list[AgentProfile]:
         missing = REQUIRED_FIELDS - data.keys()
         if missing:
             raise ValueError(f"{claude_md}: missing required fields: {missing}")
+        raw_max_turns = data.get("max_turns")
         profiles.append(
             AgentProfile(
                 agent_role=str(data["agent_role"]),
@@ -91,6 +93,7 @@ def load_agent_profiles(agents_dir: pathlib.Path) -> list[AgentProfile]:
                 profile_path=str(claude_md.resolve()),
                 tool_allowlist=data.get("tool_allowlist", []),
                 is_active=bool(data.get("is_active", True)),
+                max_turns=int(raw_max_turns) if raw_max_turns is not None else None,
             )
         )
     return profiles

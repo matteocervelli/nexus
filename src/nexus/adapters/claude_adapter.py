@@ -1,21 +1,18 @@
-"""Claude Code CLI adapter for Nexus.
+"""Claude Code CLI adapter for Nexus — uses claude-agent-sdk.
 
-Executes agent work items via `claude --output-format json -p` subprocess.
-Supports session resumption via --resume.
+Executes agent work items via the claude_agent_sdk.query async generator.
+Supports session resumption via ClaudeAgentOptions.resume.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-import shutil
-import signal
 import time
 from datetime import UTC, datetime
 from typing import Any
 
 import structlog
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, query
 
 from nexus.adapter_base import (
     AdapterBase,
@@ -26,10 +23,12 @@ from nexus.adapter_base import (
     UsageReport,
     ValidationResult,
 )
+from nexus.adapters._claude_sdk import _is_transient, _read_system_prompt, _stderr_handler
 
 logger = structlog.get_logger(__name__)
 
 _EXCERPT_LIMIT = 4096
+_MINIMAL_TOOLS = ["Read", "Glob", "Grep"]
 
 
 def _now() -> datetime:
@@ -41,7 +40,7 @@ def _truncate(text: str) -> str:
 
 
 class ClaudeAdapter(AdapterBase):
-    """Subprocess adapter for the Claude Code CLI."""
+    """SDK-based adapter for the Claude Code CLI."""
 
     async def describe(self) -> AdapterDescription:
         return AdapterDescription(
@@ -52,10 +51,13 @@ class ClaudeAdapter(AdapterBase):
         )
 
     async def validate_environment(self, config: dict[str, Any]) -> ValidationResult:
-        errors: list[str] = []
-        if shutil.which("claude") is None:
-            errors.append("`claude` binary not found in PATH")
-        return ValidationResult(ok=len(errors) == 0, errors=errors)
+        try:
+            import claude_agent_sdk as _sdk  # noqa: F401
+
+            _ = _sdk.query  # ensure the symbol actually exists in this version
+            return ValidationResult(ok=True)
+        except (ImportError, AttributeError) as exc:
+            return ValidationResult(ok=False, errors=[f"`claude_agent_sdk` unusable: {exc}"])
 
     async def invoke_heartbeat(self, request: AdapterRequest) -> AdapterResult:
         return await self._run(request)
@@ -64,7 +66,6 @@ class ClaudeAdapter(AdapterBase):
         return await self._run(request)
 
     async def cancel_run(self, request: AdapterRequest) -> None:
-        # cancel_run operates on a live proc; tracked externally by scheduler
         logger.info("cancel_run.noop", agent_id=request.agent_id)
 
     async def collect_usage(self, run_handle: object) -> UsageReport:
@@ -86,15 +87,10 @@ class ClaudeAdapter(AdapterBase):
 
     async def healthcheck(self, config: dict[str, Any]) -> bool:
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "claude",
-                "--version",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            await asyncio.wait_for(proc.communicate(), timeout=5)
-            return proc.returncode == 0
+            import claude_agent_sdk as _sdk  # noqa: F401
+
+            _ = _sdk.query
+            return True
         except Exception:
             return False
 
@@ -102,29 +98,7 @@ class ClaudeAdapter(AdapterBase):
     # Internal
     # ------------------------------------------------------------------
 
-    def _build_argv(self, request: AdapterRequest) -> list[str]:
-        extra = request.extra or {}
-        argv = [
-            "claude",
-            "--system-prompt",
-            request.agent_profile,
-            "--output-format",
-            "json",
-            "-p",
-            request.prompt_context,
-            "--dangerously-skip-permissions",
-            "--max-turns",
-            str(extra.get("max_turns", 300)),
-        ]
-        if request.session_ref is not None:
-            argv += ["--resume", request.session_ref]
-        model = extra.get("model")
-        if model:
-            argv += ["--model", model]
-        return argv
-
     async def _run(self, request: AdapterRequest) -> AdapterResult:
-        argv = self._build_argv(request)
         started_at = _now()
         t0 = time.monotonic()
         extra = request.extra or {}
@@ -135,85 +109,79 @@ class ClaudeAdapter(AdapterBase):
             correlation_id=request.correlation_id,
         )
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-                cwd=extra.get("cwd"),
-            )
-        except Exception as exc:
-            log.error("spawn.failed", error=str(exc))
-            finished_at = _now()
-            return AdapterResult(
-                status="failed",
-                started_at=started_at,
-                finished_at=finished_at,
-                error_code="SPAWN_ERROR",
-                error_message=str(exc),
-            )
+        system_prompt = _read_system_prompt(request.agent_profile)
+        allowed_tools = list(request.tools_allowlist) if request.tools_allowlist else _MINIMAL_TOOLS
 
-        try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=request.timeout_seconds,
-            )
-        except TimeoutError:
-            finished_at = _now()
-            log.warning("run.timed_out", timeout_seconds=request.timeout_seconds)
-            proc.terminate()
+        opts = ClaudeAgentOptions(
+            system_prompt=system_prompt,
+            model=extra.get("model") or None,
+            allowed_tools=allowed_tools,
+            max_turns=int(extra.get("max_turns", 300)),
+            permission_mode="bypassPermissions",
+            resume=request.session_ref or None,
+            cwd=extra.get("cwd"),
+            stderr=_stderr_handler,
+            # Pass stream-close timeout per-invocation via env, not os.environ (avoids race)
+            env={"CLAUDE_CODE_STREAM_CLOSE_TIMEOUT": str(int(request.timeout_seconds * 1000))},
+        )
+
+        text_parts: list[str] = []
+        session_after: str | None = None
+        usage_raw: dict[str, Any] = {}
+        cost: float = 0.0
+
+        async def _stream() -> None:
+            nonlocal session_after, usage_raw, cost
+            async for msg in query(prompt=request.prompt_context, options=opts):
+                if msg is None:
+                    continue
+                if isinstance(msg, ResultMessage):
+                    session_after = msg.session_id
+                    usage_raw = msg.usage or {}
+                    cost = float(getattr(msg, "total_cost_usd", 0.0) or 0.0)
+                    continue
+                if isinstance(msg, AssistantMessage):
+                    for block in getattr(msg, "content", []):
+                        text = getattr(block, "text", None)
+                        if text:
+                            text_parts.append(text)
+
+        for attempt in range(2):
             try:
-                await asyncio.wait_for(proc.wait(), timeout=15)
+                await asyncio.wait_for(_stream(), timeout=request.timeout_seconds)
+                break  # success
             except TimeoutError:
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except OSError:
-                    proc.kill()
-            return AdapterResult(
-                status="timed_out",
-                started_at=started_at,
-                finished_at=finished_at,
-            )
+                finished_at = _now()
+                log.warning("run.timed_out", timeout_seconds=request.timeout_seconds)
+                return AdapterResult(
+                    status="timed_out",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                )
+            except Exception as exc:
+                delay = _is_transient(exc)
+                if delay is not None and attempt == 0:
+                    log.warning("run.transient_retry", error=str(exc), delay=delay)
+                    await asyncio.sleep(delay)
+                    text_parts.clear()
+                    continue
+                # Non-transient or second attempt failed
+                finished_at = _now()
+                error_code = "TRANSIENT_EXHAUSTED" if delay is not None else "SDK_ERROR"
+                log.error("run.failed", error_code=error_code, error=str(exc))
+                return AdapterResult(
+                    status="failed",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    error_code=error_code,
+                    error_message=str(exc),
+                )
 
         finished_at = _now()
         duration_ms = int((time.monotonic() - t0) * 1000)
 
-        stdout_text = stdout_bytes.decode(errors="replace")
-        stderr_text = stderr_bytes.decode(errors="replace")
-
-        if proc.returncode != 0:
-            log.error("run.failed", exit_code=proc.returncode, stderr=stderr_text[:200])
-            return AdapterResult(
-                status="failed",
-                started_at=started_at,
-                finished_at=finished_at,
-                exit_code=proc.returncode,
-                stdout_excerpt=_truncate(stdout_text),
-                stderr_excerpt=_truncate(stderr_text),
-                error_code="NONZERO_EXIT",
-                error_message=stderr_text or f"exit code {proc.returncode}",
-            )
-
-        try:
-            envelope = json.loads(stdout_text)
-        except json.JSONDecodeError as exc:
-            log.error("parse.failed", error=str(exc))
-            return AdapterResult(
-                status="failed",
-                started_at=started_at,
-                finished_at=finished_at,
-                exit_code=proc.returncode,
-                stdout_excerpt=_truncate(stdout_text),
-                error_code="PARSE_ERROR",
-                error_message=f"JSON parse error: {exc}",
-            )
-
-        usage_raw = envelope.get("usage", {})
         tokens_in = int(usage_raw.get("input_tokens", 0))
         tokens_out = int(usage_raw.get("output_tokens", 0))
-        cost = float(envelope.get("cost_usd", 0.0))
-        session_after = envelope.get("session_id")
 
         usage = UsageReport(
             tokens_used=tokens_in + tokens_out,
@@ -227,8 +195,9 @@ class ClaudeAdapter(AdapterBase):
             },
         )
 
+        output_text = "\n".join(text_parts)
         result_payload: dict[str, Any] = {
-            "output": envelope.get("result", ""),
+            "output": output_text,
             "_tokens_input": tokens_in,
             "_tokens_output": tokens_out,
             "_cost_usd": cost,
@@ -239,9 +208,6 @@ class ClaudeAdapter(AdapterBase):
             status="succeeded",
             started_at=started_at,
             finished_at=finished_at,
-            exit_code=0,
-            stdout_excerpt=_truncate(stdout_text),
-            stderr_excerpt=_truncate(stderr_text) if stderr_text else None,
             result_payload=result_payload,
             usage=usage,
             cost_usd=cost,

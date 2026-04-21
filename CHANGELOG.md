@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `ClaudeAdapter` migrated from subprocess to `claude-agent-sdk` streaming — fixes agent_profile path passed as system prompt text (#55)
+- `scheduler._build_request` now forwards `entry.model`, `entry.tool_allowlist`, `entry.max_turns` into `AdapterRequest` — registry values previously ignored (#55)
+- `ClaudeAdapter` uses per-invocation `env` dict for stream timeout instead of mutating `os.environ` (#55)
+- `validate_environment` / `healthcheck` check SDK importability instead of `claude` binary (#55)
+
 ### Added
+
+- `src/nexus/adapters/_claude_sdk.py`: SDK helpers (`_patch_sdk_message_parser`, `_stderr_handler`, `_is_transient`, `_read_system_prompt`) (#55)
+- Optional `max_turns` field in `AgentProfile`, `AgentRegistryEntry`, and `sync-agents` payload (#55)
 
 - `nexus sync-agents` CLI command: upsert agent profiles from CLAUDE.md files into Atrium agent_registry — exits non-zero on any failed upsert, failed role names included in error message (#56)
 - Unit tests for `sync-agents` CLI: dry-run, payload shape, multi-profile error aggregation, transport error, idempotency (fixture-based, decoupled from real agent files) (#56)

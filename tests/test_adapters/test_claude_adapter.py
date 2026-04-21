@@ -1,38 +1,62 @@
-"""Tests for ClaudeAdapter — TDD red phase."""
+"""Tests for ClaudeAdapter — SDK-based implementation."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import pathlib
-from unittest.mock import AsyncMock, MagicMock, patch
+from collections.abc import AsyncIterator
+from typing import Any
+from unittest.mock import AsyncMock, patch  # noqa: F401
+
+import pytest
+from claude_agent_sdk import AssistantMessage, ResultMessage
+from claude_agent_sdk.types import TextBlock
 
 from nexus.adapter_base import AdapterRequest, AdapterResult
 from nexus.adapters.claude_adapter import ClaudeAdapter
 
 # ---------------------------------------------------------------------------
-# Helpers
+# SDK message factories
 # ---------------------------------------------------------------------------
 
-VALID_JSON_ENVELOPE = json.dumps(
-    {
-        "result": "Task complete.",
-        "session_id": "sess-abc123",
-        "cost_usd": 0.0045,
-        "usage": {
+
+def _assistant_msg(text: str, model: str = "claude-sonnet-4-6") -> AssistantMessage:
+    return AssistantMessage(content=[TextBlock(text=text)], model=model)
+
+
+def _result_msg(
+    session_id: str = "s1",
+    usage: dict[str, Any] | None = None,
+    total_cost_usd: float = 0.0045,
+) -> ResultMessage:
+    return ResultMessage(
+        subtype="success",
+        duration_ms=1234,
+        duration_api_ms=1000,
+        is_error=False,
+        num_turns=1,
+        session_id=session_id,
+        total_cost_usd=total_cost_usd,
+        usage=usage
+        or {
             "input_tokens": 500,
             "output_tokens": 150,
-            "cache_read_input_tokens": 0,
-            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 10,
+            "cache_creation_input_tokens": 20,
         },
-    }
-)
+    )
 
 
-def _make_request(tmp_profile: pathlib.Path, **kwargs) -> AdapterRequest:
-    defaults = {
+async def _sdk_gen(*msgs: Any) -> AsyncIterator[Any]:
+    """Async generator helper that yields pre-canned messages."""
+    for m in msgs:
+        yield m
+
+
+def _make_request(tmp_profile: pathlib.Path, **kwargs: Any) -> AdapterRequest:
+    defaults: dict[str, Any] = {
         "agent_id": "agent-test",
-        "agent_profile": str(tmp_profile),
+        "agent_profile": str(tmp_profile / "CLAUDE.md"),
         "work_item_id": 1,
         "work_type": "code",
         "priority": "P2",
@@ -45,286 +69,305 @@ def _make_request(tmp_profile: pathlib.Path, **kwargs) -> AdapterRequest:
     return AdapterRequest(**defaults)
 
 
-def _mock_proc(returncode: int, stdout: str, stderr: str = "") -> MagicMock:
-    proc = MagicMock()
-    proc.returncode = returncode
-    proc.terminate = MagicMock()
-    proc.kill = MagicMock()
-    proc.wait = AsyncMock(return_value=returncode)
-    proc.communicate = AsyncMock(return_value=(stdout.encode(), stderr.encode()))
-    return proc
+# ---------------------------------------------------------------------------
+# conftest-style fixture — profile path for adapter tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def profile(tmp_path: pathlib.Path) -> pathlib.Path:
+    """CLAUDE.md with fenced YAML front-matter + body."""
+    d = tmp_path / "agent-profile"
+    d.mkdir()
+    (d / "CLAUDE.md").write_text(
+        "```yaml\nagent_role: test\nmodel: claude-sonnet-4-6\n```\n\n# Test Agent\n\nYou are a test agent.\n"
+    )
+    return d
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Helper: captured ClaudeAgentOptions
+# ---------------------------------------------------------------------------
+
+
+def _capture_opts_side_effect(captured: dict[str, Any]):
+    """Return a side_effect that saves the options kwarg and yields canned messages."""
+
+    async def _gen(prompt: str, options: Any) -> AsyncIterator[Any]:
+        captured["options"] = options
+        yield _assistant_msg("ok")
+        yield _result_msg()
+
+    return _gen
+
+
+# ---------------------------------------------------------------------------
+# TestInvokeHeartbeat
 # ---------------------------------------------------------------------------
 
 
 class TestInvokeHeartbeat:
-    async def test_happy_path(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
-            adapter = ClaudeAdapter()
-            result = await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+    async def test_happy_path(self, profile: pathlib.Path) -> None:
+        """SDK yields AssistantMessage + ResultMessage → status=succeeded."""
+
+        async def _fake_query(prompt: str, options: Any) -> AsyncIterator[Any]:
+            yield _assistant_msg("Task complete.")
+            yield _result_msg(session_id="sess-abc123", total_cost_usd=0.0045)
+
+        with patch("nexus.adapters.claude_adapter.query", side_effect=_fake_query):
+            result = await ClaudeAdapter().invoke_heartbeat(_make_request(profile))
 
         assert result.status == "succeeded"
+        assert result.result_payload.get("output") == "Task complete."
+        assert result.session_after == "sess-abc123"
         assert result.usage is not None
         assert result.usage.tokens_used == 650  # 500 + 150
-        assert result.session_after == "sess-abc123"
-        assert result.result_payload.get("output") == "Task complete."
 
-    async def test_timeout_path(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        # communicate() raises TimeoutError
-        proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
+    async def test_model_forwarding(self, profile: pathlib.Path) -> None:
+        """extra['model'] is forwarded to ClaudeAgentOptions.model."""
+        captured: dict[str, Any] = {}
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
-            adapter = ClaudeAdapter()
-            result = await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+        with patch(
+            "nexus.adapters.claude_adapter.query",
+            side_effect=_capture_opts_side_effect(captured),
+        ):
+            await ClaudeAdapter().invoke_heartbeat(
+                _make_request(profile, extra={"model": "claude-opus-4-7"})
+            )
+
+        assert captured["options"].model == "claude-opus-4-7"
+
+    async def test_tools_forwarding(self, profile: pathlib.Path) -> None:
+        """tools_allowlist is forwarded to ClaudeAgentOptions.allowed_tools."""
+        captured: dict[str, Any] = {}
+
+        with patch(
+            "nexus.adapters.claude_adapter.query",
+            side_effect=_capture_opts_side_effect(captured),
+        ):
+            await ClaudeAdapter().invoke_heartbeat(
+                _make_request(profile, tools_allowlist=["Read", "Bash"])
+            )
+
+        assert captured["options"].allowed_tools == ["Read", "Bash"]
+
+    async def test_tools_empty_defaults_to_minimal_safe_set(self, profile: pathlib.Path) -> None:
+        """Empty tools_allowlist defaults to minimal safe set."""
+        captured: dict[str, Any] = {}
+
+        with patch(
+            "nexus.adapters.claude_adapter.query",
+            side_effect=_capture_opts_side_effect(captured),
+        ):
+            await ClaudeAdapter().invoke_heartbeat(_make_request(profile))
+
+        allowed = captured["options"].allowed_tools
+        assert "Read" in allowed
+        assert "Glob" in allowed
+        assert "Grep" in allowed
+
+    async def test_max_turns_forwarding(self, profile: pathlib.Path) -> None:
+        """extra['max_turns'] is forwarded to ClaudeAgentOptions.max_turns."""
+        captured: dict[str, Any] = {}
+
+        with patch(
+            "nexus.adapters.claude_adapter.query",
+            side_effect=_capture_opts_side_effect(captured),
+        ):
+            await ClaudeAdapter().invoke_heartbeat(_make_request(profile, extra={"max_turns": 80}))
+
+        assert captured["options"].max_turns == 80
+
+    async def test_resume_forwarded(self, profile: pathlib.Path) -> None:
+        """session_ref is forwarded as ClaudeAgentOptions.resume."""
+        captured: dict[str, Any] = {}
+
+        with patch(
+            "nexus.adapters.claude_adapter.query",
+            side_effect=_capture_opts_side_effect(captured),
+        ):
+            result = await ClaudeAdapter().invoke_heartbeat(
+                _make_request(profile, session_ref="s0")
+            )
+
+        assert captured["options"].resume == "s0"
+        assert result.session_before == "s0"
+
+    async def test_timeout(self, profile: pathlib.Path) -> None:
+        """query that sleeps beyond timeout → status=timed_out."""
+
+        async def _slow_query(prompt: str, options: Any) -> AsyncIterator[Any]:
+            await asyncio.sleep(10)
+            yield _assistant_msg("too late")
+
+        with patch("nexus.adapters.claude_adapter.query", side_effect=_slow_query):
+            result = await ClaudeAdapter().invoke_heartbeat(
+                _make_request(profile, timeout_seconds=1)
+            )
 
         assert result.status == "timed_out"
-        proc.terminate.assert_called_once()
 
-    async def test_session_resume_passes_resume_flag(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
+    async def test_permission_mode_always_bypass(self, profile: pathlib.Path) -> None:
+        """permission_mode is always bypassPermissions."""
+        captured: dict[str, Any] = {}
 
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
+        with patch(
+            "nexus.adapters.claude_adapter.query",
+            side_effect=_capture_opts_side_effect(captured),
+        ):
+            await ClaudeAdapter().invoke_heartbeat(_make_request(profile))
 
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(_make_request(tmp_profile_path, session_ref="abc123"))
+        assert captured["options"].permission_mode == "bypassPermissions"
 
-        assert "--resume" in captured_args
-        idx = captured_args.index("--resume")
-        assert captured_args[idx + 1] == "abc123"
+    async def test_retry_on_transient(self, profile: pathlib.Path) -> None:
+        """First call raises transient error → retried once → succeeds."""
+        calls: list[int] = []
 
-    async def test_malformed_json(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, "not json at all")
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
-            adapter = ClaudeAdapter()
-            result = await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+        async def _flaky_query(prompt: str, options: Any) -> AsyncIterator[Any]:
+            calls.append(1)
+            if len(calls) == 1:
+                raise Exception("Control request timeout: initialize")
+            yield _assistant_msg("ok after retry")
+            yield _result_msg()
+
+        with (
+            patch("nexus.adapters.claude_adapter.query", side_effect=_flaky_query),
+            patch("nexus.adapters.claude_adapter.asyncio.sleep", new=AsyncMock()) as mock_sleep,
+        ):
+            result = await ClaudeAdapter().invoke_heartbeat(_make_request(profile))
+
+        assert result.status == "succeeded"
+        assert len(calls) == 2
+        mock_sleep.assert_called_once_with(5)
+
+    async def test_retry_exhausted(self, profile: pathlib.Path) -> None:
+        """Both attempts raise transient error → status=failed, TRANSIENT_EXHAUSTED."""
+
+        async def _always_fail(prompt: str, options: Any) -> AsyncIterator[Any]:
+            raise Exception("Control request timeout: initialize")
+            yield  # make it a generator
+
+        with (
+            patch("nexus.adapters.claude_adapter.query", side_effect=_always_fail),
+            patch("nexus.adapters.claude_adapter.asyncio.sleep", new=AsyncMock()),
+        ):
+            result = await ClaudeAdapter().invoke_heartbeat(_make_request(profile))
 
         assert result.status == "failed"
-        assert result.error_code == "PARSE_ERROR"
+        assert result.error_code == "TRANSIENT_EXHAUSTED"
 
-    async def test_nonzero_exit(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(1, "", "something went wrong in claude cli")
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
-            adapter = ClaudeAdapter()
-            result = await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+    async def test_non_transient_exception(self, profile: pathlib.Path) -> None:
+        """Non-transient exception → status=failed, SDK_ERROR."""
+
+        async def _bad_query(prompt: str, options: Any) -> AsyncIterator[Any]:
+            raise RuntimeError("some unexpected sdk bug")
+            yield
+
+        with patch("nexus.adapters.claude_adapter.query", side_effect=_bad_query):
+            result = await ClaudeAdapter().invoke_heartbeat(_make_request(profile))
 
         assert result.status == "failed"
-        assert result.error_message is not None
-        assert "something went wrong in claude cli" in result.error_message
+        assert result.error_code == "SDK_ERROR"
 
-    async def test_no_color_absent(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
+    async def test_system_prompt_reads_file_body(self, profile: pathlib.Path) -> None:
+        """agent_profile path → ClaudeAgentOptions.system_prompt is the body text, not the path."""
+        captured: dict[str, Any] = {}
 
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
+        with patch(
+            "nexus.adapters.claude_adapter.query",
+            side_effect=_capture_opts_side_effect(captured),
+        ):
+            await ClaudeAdapter().invoke_heartbeat(_make_request(profile))
 
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
-
-        assert "--no-color" not in captured_args
-
-    async def test_dangerously_skip_permissions_always_present(
-        self, tmp_profile_path: pathlib.Path
-    ) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
-
-        assert "--dangerously-skip-permissions" in captured_args
-
-    async def test_dangerously_skip_permissions_present_on_resume(
-        self, tmp_profile_path: pathlib.Path
-    ) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(
-                _make_request(tmp_profile_path, session_ref="some-session")
-            )
-
-        assert "--dangerously-skip-permissions" in captured_args
-
-    async def test_model_flag_added_when_in_extra(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(
-                _make_request(tmp_profile_path, extra={"model": "claude-opus-4-7"})
-            )
-
-        assert "--model" in captured_args
-        idx = captured_args.index("--model")
-        assert captured_args[idx + 1] == "claude-opus-4-7"
-
-    async def test_model_flag_absent_when_not_in_extra(
-        self, tmp_profile_path: pathlib.Path
-    ) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
-
-        assert "--model" not in captured_args
-
-    async def test_max_turns_always_added(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
-
-        assert "--max-turns" in captured_args
-        idx = captured_args.index("--max-turns")
-        assert captured_args[idx + 1] == "300"
-
-    async def test_max_turns_custom(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(_make_request(tmp_profile_path, extra={"max_turns": 50}))
-
-        assert "--max-turns" in captured_args
-        idx = captured_args.index("--max-turns")
-        assert captured_args[idx + 1] == "50"
-
-    async def test_cwd_passed_to_subprocess(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_kwargs: dict = {}
-
-        async def capture_exec(*args, **kwargs):
-            captured_kwargs.update(kwargs)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(
-                _make_request(tmp_profile_path, extra={"cwd": "/tmp/workspace"})
-            )
-
-        assert captured_kwargs.get("cwd") == "/tmp/workspace"
+        sp = captured["options"].system_prompt
+        assert isinstance(sp, str)
+        assert "Test Agent" in sp
+        assert "agent_role" not in sp
+        assert str(profile) not in sp
 
 
-class TestResumeSession:
-    async def test_resume_passes_resume_flag(self, tmp_profile_path: pathlib.Path) -> None:
-        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
-        captured_args: list[str] = []
-
-        async def capture_exec(*args, **kwargs):
-            captured_args.extend(args)
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", new=capture_exec):
-            adapter = ClaudeAdapter()
-            await adapter.resume_session(_make_request(tmp_profile_path, session_ref="resume-xyz"))
-
-        assert "--resume" in captured_args
-        idx = captured_args.index("--resume")
-        assert captured_args[idx + 1] == "resume-xyz"
+# ---------------------------------------------------------------------------
+# TestValidateEnvironment
+# ---------------------------------------------------------------------------
 
 
 class TestValidateEnvironment:
-    async def test_claude_not_found(self) -> None:
-        with patch("shutil.which", return_value=None):
-            adapter = ClaudeAdapter()
-            result = await adapter.validate_environment({})
-
-        assert result.ok is False
-        assert len(result.errors) > 0
-
-    async def test_claude_found(self) -> None:
-        with patch("shutil.which", return_value="/usr/local/bin/claude"):
-            adapter = ClaudeAdapter()
-            result = await adapter.validate_environment({})
-
+    async def test_sdk_importable(self) -> None:
+        """SDK importable → validate_environment returns ok=True."""
+        result = await ClaudeAdapter().validate_environment({})
         assert result.ok is True
+
+    async def test_sdk_not_importable(self) -> None:
+        """SDK not importable → validate_environment returns ok=False."""
+        with patch.dict("sys.modules", {"claude_agent_sdk": None}):  # type: ignore[dict-item]
+            result = await ClaudeAdapter().validate_environment({})
+        assert result.ok is False
+
+
+# ---------------------------------------------------------------------------
+# TestHealthcheck
+# ---------------------------------------------------------------------------
 
 
 class TestHealthcheck:
-    async def test_healthcheck_ok(self) -> None:
-        proc = _mock_proc(0, "claude 1.0.0")
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
-            adapter = ClaudeAdapter()
-            ok = await adapter.healthcheck({})
-        assert ok is True
+    async def test_healthcheck_ok_when_sdk_importable(self) -> None:
+        result = await ClaudeAdapter().healthcheck({})
+        assert result is True
 
-    async def test_healthcheck_fails(self) -> None:
-        proc = _mock_proc(1, "")
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)):
-            adapter = ClaudeAdapter()
-            ok = await adapter.healthcheck({})
-        assert ok is False
+
+# ---------------------------------------------------------------------------
+# TestDescribe
+# ---------------------------------------------------------------------------
 
 
 class TestDescribe:
     async def test_describe_returns_adapter_id(self) -> None:
-        adapter = ClaudeAdapter()
-        desc = await adapter.describe()
+        desc = await ClaudeAdapter().describe()
         assert desc.adapter_id == "claude-code-cli"
         assert desc.session_mode == "resumable"
         assert "code" in desc.capabilities
 
 
+# ---------------------------------------------------------------------------
+# TestCollectUsage
+# ---------------------------------------------------------------------------
+
+
 class TestCollectUsage:
     async def test_collect_usage_from_result(self) -> None:
-        adapter = ClaudeAdapter()
         result = AdapterResult(
             status="succeeded",
             started_at="2026-04-20T10:00:00",
             finished_at="2026-04-20T10:00:05",
-            usage=None,
             result_payload={
                 "_tokens_input": 400,
                 "_tokens_output": 100,
                 "_cost_usd": 0.002,
             },
         )
-        usage = await adapter.collect_usage(result)
+        usage = await ClaudeAdapter().collect_usage(result)
         assert usage.tokens_used == 500
         assert usage.cost_usd == 0.002
+
+
+# ---------------------------------------------------------------------------
+# TestResumeSession
+# ---------------------------------------------------------------------------
+
+
+class TestResumeSession:
+    async def test_resume_session_delegates_to_run(self, profile: pathlib.Path) -> None:
+        """resume_session calls _run with same semantics as invoke_heartbeat."""
+
+        async def _fake_query(prompt: str, options: Any) -> AsyncIterator[Any]:
+            yield _assistant_msg("resumed")
+            yield _result_msg(session_id="new-sess")
+
+        with patch("nexus.adapters.claude_adapter.query", side_effect=_fake_query):
+            result = await ClaudeAdapter().resume_session(
+                _make_request(profile, session_ref="old-sess")
+            )
+
+        assert result.status == "succeeded"
+        assert result.session_before == "old-sess"
+        assert result.session_after == "new-sess"

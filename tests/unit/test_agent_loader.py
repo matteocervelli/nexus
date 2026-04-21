@@ -129,3 +129,35 @@ def test_is_active_defaults_to_true(tmp_path):
     (agent_dir / "CLAUDE.md").write_text(content)
     profiles = load_agent_profiles(tmp_path)
     assert profiles[0].is_active is True
+
+
+def test_max_turns_parsed_from_frontmatter(tmp_path):
+    content = """# Code Agent
+
+```yaml
+agent_role: code-agent
+execution_backend: claude-code-cli
+model: claude-sonnet-4-6
+capability_class: code
+timeout_seconds: 900
+monthly_token_budget: 500000
+max_turns: 80
+tool_allowlist: [Read, Write, Bash]
+```
+
+## Identity
+...
+"""
+    agent_dir = tmp_path / "code-agent"
+    agent_dir.mkdir()
+    (agent_dir / "CLAUDE.md").write_text(content)
+    profiles = load_agent_profiles(tmp_path)
+    assert profiles[0].max_turns == 80
+
+
+def test_max_turns_defaults_to_none_when_absent(tmp_path):
+    agent_dir = tmp_path / "code-agent"
+    agent_dir.mkdir()
+    (agent_dir / "CLAUDE.md").write_text(SAMPLE_FENCED)
+    profiles = load_agent_profiles(tmp_path)
+    assert profiles[0].max_turns is None
