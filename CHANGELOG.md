@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `dashboard/` — standalone Vite + React 19 + TanStack Router/Query + `@adlimen/ui-react` SPA scaffold; three stub views (WorkflowFeed, AgentStatus, AuditLog), typed API stubs (`src/api/nexus.ts`), WebSocket placeholder (`src/ws/nexus-ws.ts`), MSW handlers, Vitest setup; proxy target `/nexus/api` → Atrium backend (#21)
 - `HttpAdapter` — stateless HTTP execution backend for remote agents; supports sync (POST + immediate response) and async (POST + poll) modes, configurable auth headers, timeout enforcement, and `budget_blocked`/`environment_error` as terminal statuses (#14)
 - `src/nexus/adapters/_claude_sdk.py`: SDK helpers (`_patch_sdk_message_parser`, `_stderr_handler`, `_is_transient`, `_read_system_prompt`) (#55)
 - Optional `max_turns` field in `AgentProfile`, `AgentRegistryEntry`, and `sync-agents` payload (#55)
