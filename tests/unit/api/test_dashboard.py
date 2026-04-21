@@ -20,7 +20,7 @@ WORKFLOW_DETAIL = {
     "steps": [
         {
             "id": "step-001",
-            "name": "step one",
+            "agent_role": "code-agent",
             "status": "done",
             "step_index": 0,
             "depends_on": [],

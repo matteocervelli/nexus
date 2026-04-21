@@ -19,10 +19,10 @@ class WorkflowSummary(BaseModel):
 
 class WorkflowStep(BaseModel):
     id: str
-    name: str
-    status: str
     step_index: int
-    depends_on: list[str] = []
+    agent_role: str
+    status: str
+    depends_on: list[Any] = []
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
