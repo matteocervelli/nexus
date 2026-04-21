@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `HttpAdapter` — stateless HTTP execution backend for remote agents; supports sync (POST + immediate response) and async (POST + poll) modes, configurable auth headers, timeout enforcement, and `budget_blocked`/`environment_error` as terminal statuses (#14)
 - `src/nexus/adapters/_claude_sdk.py`: SDK helpers (`_patch_sdk_message_parser`, `_stderr_handler`, `_is_transient`, `_read_system_prompt`) (#55)
 - Optional `max_turns` field in `AgentProfile`, `AgentRegistryEntry`, and `sync-agents` payload (#55)
 
