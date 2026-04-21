@@ -1,12 +1,13 @@
 """Codex CLI adapter for the Nexus orchestration engine.
 
-Spawns `codex -p <prompt>` as an ephemeral subprocess. No session model.
+Spawns `codex exec <prompt>` as an ephemeral subprocess. No session model.
 Timeout detection is elapsed-time-based because Codex exits 0 on SIGTERM.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import time
 from datetime import UTC, datetime
@@ -53,11 +54,12 @@ class CodexAdapter(AdapterBase):
         try:
             proc = await asyncio.create_subprocess_exec(
                 "codex",
-                "-p",
+                "exec",
                 request.prompt_context,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
+                env={**os.environ, "NO_COLOR": "1"},
             )
         except OSError as exc:
             finished_at = datetime.now(UTC)
@@ -80,6 +82,7 @@ class CodexAdapter(AdapterBase):
         tokens_used = len(stdout_decoded) // 4
 
         # Elapsed-based timeout detection: Codex exits 0 on SIGTERM so exit code is unreliable.
+        # communicate() already returned so the process has exited; no additional kill needed.
         status: AdapterStatus
         if elapsed >= request.timeout_seconds:
             status = "timed_out"
@@ -113,7 +116,6 @@ class CodexAdapter(AdapterBase):
 
     async def cancel_run(self, request: AdapterRequest) -> None:
         # cancel_run is best-effort; active proc reference not tracked here
-        # (Nexus Core is responsible for process lifecycle management)
         logger.warning("codex.cancel_run_noop", work_item_id=request.work_item_id)
 
     async def collect_usage(self, run_handle: object) -> UsageReport:

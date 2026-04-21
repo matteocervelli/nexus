@@ -85,7 +85,7 @@ class TestInvokeHeartbeat:
         assert result.status == "timed_out"
         proc.terminate.assert_called_once()
 
-    async def test_session_resume_passes_session_id(self, tmp_profile_path: pathlib.Path) -> None:
+    async def test_session_resume_passes_resume_flag(self, tmp_profile_path: pathlib.Path) -> None:
         proc = _mock_proc(0, VALID_JSON_ENVELOPE)
         captured_args: list[str] = []
 
@@ -97,8 +97,8 @@ class TestInvokeHeartbeat:
             adapter = ClaudeAdapter()
             await adapter.invoke_heartbeat(_make_request(tmp_profile_path, session_ref="abc123"))
 
-        assert "--session-id" in captured_args
-        idx = captured_args.index("--session-id")
+        assert "--resume" in captured_args
+        idx = captured_args.index("--resume")
         assert captured_args[idx + 1] == "abc123"
 
     async def test_malformed_json(self, tmp_profile_path: pathlib.Path) -> None:
@@ -120,9 +120,141 @@ class TestInvokeHeartbeat:
         assert result.error_message is not None
         assert "something went wrong in claude cli" in result.error_message
 
+    async def test_no_color_absent(self, tmp_profile_path: pathlib.Path) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_args: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+
+        assert "--no-color" not in captured_args
+
+    async def test_dangerously_skip_permissions_always_present(
+        self, tmp_profile_path: pathlib.Path
+    ) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_args: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+
+        assert "--dangerously-skip-permissions" in captured_args
+
+    async def test_dangerously_skip_permissions_present_on_resume(
+        self, tmp_profile_path: pathlib.Path
+    ) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_args: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(
+                _make_request(tmp_profile_path, session_ref="some-session")
+            )
+
+        assert "--dangerously-skip-permissions" in captured_args
+
+    async def test_model_flag_added_when_in_extra(self, tmp_profile_path: pathlib.Path) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_args: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(
+                _make_request(tmp_profile_path, extra={"model": "claude-opus-4-7"})
+            )
+
+        assert "--model" in captured_args
+        idx = captured_args.index("--model")
+        assert captured_args[idx + 1] == "claude-opus-4-7"
+
+    async def test_model_flag_absent_when_not_in_extra(
+        self, tmp_profile_path: pathlib.Path
+    ) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_args: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+
+        assert "--model" not in captured_args
+
+    async def test_max_turns_always_added(self, tmp_profile_path: pathlib.Path) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_args: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(_make_request(tmp_profile_path))
+
+        assert "--max-turns" in captured_args
+        idx = captured_args.index("--max-turns")
+        assert captured_args[idx + 1] == "300"
+
+    async def test_max_turns_custom(self, tmp_profile_path: pathlib.Path) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_args: list[str] = []
+
+        async def capture_exec(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(
+                _make_request(tmp_profile_path, extra={"max_turns": 50})
+            )
+
+        assert "--max-turns" in captured_args
+        idx = captured_args.index("--max-turns")
+        assert captured_args[idx + 1] == "50"
+
+    async def test_cwd_passed_to_subprocess(self, tmp_profile_path: pathlib.Path) -> None:
+        proc = _mock_proc(0, VALID_JSON_ENVELOPE)
+        captured_kwargs: dict = {}
+
+        async def capture_exec(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", new=capture_exec):
+            adapter = ClaudeAdapter()
+            await adapter.invoke_heartbeat(
+                _make_request(tmp_profile_path, extra={"cwd": "/tmp/workspace"})
+            )
+
+        assert captured_kwargs.get("cwd") == "/tmp/workspace"
+
 
 class TestResumeSession:
-    async def test_resume_passes_session_id(self, tmp_profile_path: pathlib.Path) -> None:
+    async def test_resume_passes_resume_flag(self, tmp_profile_path: pathlib.Path) -> None:
         proc = _mock_proc(0, VALID_JSON_ENVELOPE)
         captured_args: list[str] = []
 
@@ -134,8 +266,8 @@ class TestResumeSession:
             adapter = ClaudeAdapter()
             await adapter.resume_session(_make_request(tmp_profile_path, session_ref="resume-xyz"))
 
-        assert "--session-id" in captured_args
-        idx = captured_args.index("--session-id")
+        assert "--resume" in captured_args
+        idx = captured_args.index("--resume")
         assert captured_args[idx + 1] == "resume-xyz"
 
 

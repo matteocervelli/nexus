@@ -56,6 +56,46 @@ class TestInvokeHeartbeat:
         assert result.usage.cost_usd == 0.0
         assert result.exit_code == 0
 
+    async def test_happy_path_argv_uses_exec_subcommand(self):
+        """argv must contain 'exec', not '-p'."""
+        request = _make_request(timeout_seconds=30)
+        proc = _make_proc(returncode=0, stdout=b"output")
+        captured_args: list[str] = []
+
+        async def capture(*args, **kwargs):
+            captured_args.extend(args)
+            return proc
+
+        with (
+            patch("nexus.adapters.codex_adapter.asyncio.create_subprocess_exec", new=capture),
+            patch("nexus.adapters.codex_adapter.time.monotonic", side_effect=[0.0, 5.0]),
+        ):
+            adapter = CodexAdapter()
+            await adapter.invoke_heartbeat(request)
+
+        assert "exec" in captured_args
+        assert "-p" not in captured_args
+
+    async def test_no_color_env_set(self):
+        """NO_COLOR=1 must be in the env passed to subprocess."""
+        request = _make_request(timeout_seconds=30)
+        proc = _make_proc(returncode=0, stdout=b"output")
+        captured_kwargs: dict = {}
+
+        async def capture(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return proc
+
+        with (
+            patch("nexus.adapters.codex_adapter.asyncio.create_subprocess_exec", new=capture),
+            patch("nexus.adapters.codex_adapter.time.monotonic", side_effect=[0.0, 5.0]),
+        ):
+            adapter = CodexAdapter()
+            await adapter.invoke_heartbeat(request)
+
+        assert "env" in captured_kwargs
+        assert captured_kwargs["env"].get("NO_COLOR") == "1"
+
     async def test_timeout_detection_exit_0(self):
         """Critical: elapsed >= timeout AND exit code 0 → timed_out (Codex exits 0 on SIGTERM)."""
         request = _make_request(timeout_seconds=30)

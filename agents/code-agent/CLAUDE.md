@@ -1,10 +1,16 @@
 # Code Agent
 
 ```yaml
+agent_role: code-agent
 execution_backend: claude-code-cli
 model: claude-sonnet-4-6
 capability_class: code
 version: 1
+timeout_seconds: 900
+monthly_token_budget: 500000
+grace_seconds: 15
+max_turns: 80
+tool_allowlist: [Read, Write, Edit, Bash, Glob, Grep]
 ```
 
 ## Identity

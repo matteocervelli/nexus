@@ -1,7 +1,7 @@
 """Claude Code CLI adapter for Nexus.
 
 Executes agent work items via `claude --output-format json -p` subprocess.
-Supports session resumption via --session-id.
+Supports session resumption via --resume.
 """
 
 from __future__ import annotations
@@ -103,6 +103,7 @@ class ClaudeAdapter(AdapterBase):
     # ------------------------------------------------------------------
 
     def _build_argv(self, request: AdapterRequest) -> list[str]:
+        extra = request.extra or {}
         argv = [
             "claude",
             "--system-prompt",
@@ -111,16 +112,22 @@ class ClaudeAdapter(AdapterBase):
             "json",
             "-p",
             request.prompt_context,
-            "--no-color",
+            "--dangerously-skip-permissions",
+            "--max-turns",
+            str(extra.get("max_turns", 300)),
         ]
         if request.session_ref is not None:
-            argv += ["--session-id", request.session_ref]
+            argv += ["--resume", request.session_ref]
+        model = extra.get("model")
+        if model:
+            argv += ["--model", model]
         return argv
 
     async def _run(self, request: AdapterRequest) -> AdapterResult:
         argv = self._build_argv(request)
         started_at = _now()
         t0 = time.monotonic()
+        extra = request.extra or {}
 
         log = logger.bind(
             agent_id=request.agent_id,
@@ -134,6 +141,7 @@ class ClaudeAdapter(AdapterBase):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
+                cwd=extra.get("cwd"),
             )
         except Exception as exc:
             log.error("spawn.failed", error=str(exc))
@@ -156,7 +164,7 @@ class ClaudeAdapter(AdapterBase):
             log.warning("run.timed_out", timeout_seconds=request.timeout_seconds)
             proc.terminate()
             try:
-                await asyncio.wait_for(proc.wait(), timeout=5)
+                await asyncio.wait_for(proc.wait(), timeout=15)
             except TimeoutError:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
