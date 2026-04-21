@@ -7,14 +7,16 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-REQUIRED_FIELDS = frozenset({
-    "agent_role",
-    "execution_backend",
-    "model",
-    "capability_class",
-    "timeout_seconds",
-    "monthly_token_budget",
-})
+REQUIRED_FIELDS = frozenset(
+    {
+        "agent_role",
+        "execution_backend",
+        "model",
+        "capability_class",
+        "timeout_seconds",
+        "monthly_token_budget",
+    }
+)
 
 
 @dataclass
@@ -78,15 +80,17 @@ def load_agent_profiles(agents_dir: pathlib.Path) -> list[AgentProfile]:
         missing = REQUIRED_FIELDS - data.keys()
         if missing:
             raise ValueError(f"{claude_md}: missing required fields: {missing}")
-        profiles.append(AgentProfile(
-            agent_role=str(data["agent_role"]),
-            execution_backend=str(data["execution_backend"]),
-            model=str(data["model"]),
-            capability_class=str(data["capability_class"]),
-            timeout_seconds=int(data["timeout_seconds"]),
-            monthly_token_budget=int(data["monthly_token_budget"]),
-            profile_path=str(claude_md.resolve()),
-            tool_allowlist=data.get("tool_allowlist", []),
-            is_active=bool(data.get("is_active", True)),
-        ))
+        profiles.append(
+            AgentProfile(
+                agent_role=str(data["agent_role"]),
+                execution_backend=str(data["execution_backend"]),
+                model=str(data["model"]),
+                capability_class=str(data["capability_class"]),
+                timeout_seconds=int(data["timeout_seconds"]),
+                monthly_token_budget=int(data["monthly_token_budget"]),
+                profile_path=str(claude_md.resolve()),
+                tool_allowlist=data.get("tool_allowlist", []),
+                is_active=bool(data.get("is_active", True)),
+            )
+        )
     return profiles

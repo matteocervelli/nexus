@@ -45,7 +45,7 @@ def sync_agents(agents_dir: str, dry_run: bool, atrium_url: str | None) -> None:
     try:
         profiles = load_agent_profiles(agents_path)
     except ValueError as exc:
-        raise click.ClickException(str(exc))
+        raise click.ClickException(str(exc)) from exc
 
     if not profiles:
         click.echo("No agent profiles found.")

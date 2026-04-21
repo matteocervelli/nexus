@@ -228,9 +228,7 @@ class TestInvokeHeartbeat:
 
         with patch("asyncio.create_subprocess_exec", new=capture_exec):
             adapter = ClaudeAdapter()
-            await adapter.invoke_heartbeat(
-                _make_request(tmp_profile_path, extra={"max_turns": 50})
-            )
+            await adapter.invoke_heartbeat(_make_request(tmp_profile_path, extra={"max_turns": 50}))
 
         assert "--max-turns" in captured_args
         idx = captured_args.index("--max-turns")
