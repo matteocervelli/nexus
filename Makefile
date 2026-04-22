@@ -1,16 +1,19 @@
 PAPERCLIP_DIR := references/paperclip
 PAPERCLIP_ENV := PAPERCLIP_TELEMETRY_DISABLED=1 DO_NOT_TRACK=1
+# Tailscale hostname — change if different
+HOMELAB_TS := homelab4change.siamese-dominant.ts.net
 
 .DEFAULT_GOAL := help
 .PHONY: help \
 	nexus-start nexus-stop nexus-restart nexus-status nexus-logs nexus-health \
 	nexus-api nexus-sync nexus-test nexus-test-integration \
 	dashboard-dev \
-	paperclip-install paperclip-dev paperclip-dev-once paperclip-server \
+	paperclip-install paperclip-start paperclip-stop \
+	paperclip-dev paperclip-dev-once paperclip-server \
 	paperclip-build paperclip-typecheck \
 	paperclip-test paperclip-test-watch paperclip-test-e2e \
 	paperclip-db-generate paperclip-db-migrate \
-	paperclip-onboard paperclip-onboard-lan paperclip-onboard-tailnet \
+	paperclip-setup paperclip-setup-tailnet \
 	install
 
 # ─── Help ─────────────────────────────────────────────────────────────────────
@@ -30,9 +33,18 @@ help:
 	@echo "  make nexus-test-integration Run integration tests (needs Atrium)"
 	@echo "  make dashboard-dev          Start dashboard SPA dev server (port 5273)"
 	@echo ""
-	@echo "Paperclip  (references/paperclip, port 3100)"
-	@echo "  make paperclip-install      pnpm install"
-	@echo "  make paperclip-dev          pnpm dev  — API + UI, watch mode"
+	@echo "Paperclip  (port 3100)"
+	@echo "  First time:"
+	@echo "  make paperclip-install      Install node deps (inside submodule)"
+	@echo "  make paperclip-setup        Onboard locally (loopback, localhost:3100)"
+	@echo "  make paperclip-setup-tailnet  Onboard on Tailscale → $(HOMELAB_TS):3100"
+	@echo ""
+	@echo "  Daily use:"
+	@echo "  make paperclip-start        Start server (bound to configured host)"
+	@echo "  make paperclip-stop         Stop server"
+	@echo ""
+	@echo "  Dev/source (run inside submodule, needs setup first):"
+	@echo "  make paperclip-dev          pnpm dev  — full dev, watch mode"
 	@echo "  make paperclip-dev-once     pnpm dev:once  — no file watching"
 	@echo "  make paperclip-server       pnpm dev:server  — API only"
 	@echo "  make paperclip-build        pnpm build"
@@ -42,11 +54,8 @@ help:
 	@echo "  make paperclip-test-e2e     pnpm test:e2e  — Playwright"
 	@echo "  make paperclip-db-generate  pnpm db:generate"
 	@echo "  make paperclip-db-migrate   pnpm db:migrate"
-	@echo "  make paperclip-onboard      npx paperclipai onboard (local loopback)"
-	@echo "  make paperclip-onboard-lan  onboard --bind lan"
-	@echo "  make paperclip-onboard-tailnet  onboard --bind tailnet"
 	@echo ""
-	@echo "  make install                Install deps for both Nexus and Paperclip"
+	@echo "  make install                Install all deps (Nexus + dashboard + Paperclip)"
 	@echo ""
 
 # ─── Nexus ────────────────────────────────────────────────────────────────────
@@ -84,7 +93,31 @@ nexus-test-integration:
 dashboard-dev:
 	cd dashboard && pnpm dev
 
-# ─── Paperclip ────────────────────────────────────────────────────────────────
+# ─── Paperclip — setup (runs from HOME, avoids git-worktree detection) ────────
+
+# First-time setup: creates ~/.paperclip/instances/default/, starts server.
+# After this, use paperclip-start / paperclip-stop.
+
+paperclip-setup:
+	cd ~ && $(PAPERCLIP_ENV) npx paperclipai onboard --yes
+	@echo ""
+	@echo "→ Paperclip running at http://localhost:3100"
+
+paperclip-setup-tailnet:
+	cd ~ && $(PAPERCLIP_ENV) npx paperclipai onboard --yes --bind tailnet
+	@echo ""
+	@echo "→ Paperclip running at http://$(HOMELAB_TS):3100"
+	@echo "  Open that URL from your Mac browser."
+
+# ─── Paperclip — daily run ────────────────────────────────────────────────────
+
+paperclip-start:
+	cd ~ && $(PAPERCLIP_ENV) npx paperclipai start
+
+paperclip-stop:
+	cd ~ && $(PAPERCLIP_ENV) npx paperclipai stop
+
+# ─── Paperclip — source/dev (inside submodule) ───────────────────────────────
 
 paperclip-install:
 	cd $(PAPERCLIP_DIR) && pnpm install
@@ -118,15 +151,6 @@ paperclip-db-generate:
 
 paperclip-db-migrate:
 	cd $(PAPERCLIP_DIR) && $(PAPERCLIP_ENV) pnpm db:migrate
-
-paperclip-onboard:
-	cd $(PAPERCLIP_DIR) && $(PAPERCLIP_ENV) npx paperclipai onboard --yes
-
-paperclip-onboard-lan:
-	cd $(PAPERCLIP_DIR) && $(PAPERCLIP_ENV) npx paperclipai onboard --yes --bind lan
-
-paperclip-onboard-tailnet:
-	cd $(PAPERCLIP_DIR) && $(PAPERCLIP_ENV) npx paperclipai onboard --yes --bind tailnet
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 
