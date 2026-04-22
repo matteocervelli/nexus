@@ -1,0 +1,3 @@
+[submodule "references/paperclip"]
+	path = references/paperclip
+	url = https://github.com/paperclipai/paperclip.git
